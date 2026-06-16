@@ -98,10 +98,10 @@
   table {
     width: 100%;
     border-collapse: collapse;
-    font-size: 12px;
+    font-size: var(--font-size, 12px);
   }
   td, th {
-    padding: 5px 4px;
+    padding: var(--row-pad, 5px) 4px;
     vertical-align: baseline;
     white-space: nowrap;
   }
@@ -151,6 +151,61 @@
     border-bottom: 1px solid var(--line);
     padding: 0;
     height: 22px;
+  }
+  .x-col { width: 22px; }
+  .x-del-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    border: none;
+    background: none;
+    color: #d24b3f;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0;
+    opacity: .55;
+    transition: opacity .15s, transform .1s;
+  }
+  .x-del-btn:hover { opacity: 1; }
+  .x-del-btn:active { transform: scale(0.85); }
+
+  /* ---- controlli zoom font/spaziatura ---- */
+  .zoomrow {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin: 10px 0 4px;
+    flex-wrap: wrap;
+  }
+  .zoomgroup {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: #555;
+  }
+  .zoomgroup span.label { margin-right: 2px; }
+  .zoom-btn {
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    font-size: 15px;
+    font-weight: 600;
+    border-radius: 6px;
+    border: 1px solid var(--line);
+    background: #fff;
+    color: var(--accent);
+  }
+  .zoom-btn:hover { border-color: var(--accent); }
+  .zoom-val {
+    min-width: 28px;
+    text-align: center;
+    font-size: 12px;
+    color: #777;
   }
   th {
     text-align: left;
@@ -207,7 +262,7 @@
     table { font-size: 9.5px; }
     td, th { padding: 2.5px 4px; }
     thead { display: none; }
-    .add-row-btn, .del-row-btn { display: none; }
+    .add-row-btn, .del-row-btn, .x-del-btn, .x-col { display: none; }
   }
 </style>
 </head>
@@ -220,6 +275,20 @@
 
   <div class="btnrow">
     <button onclick="window.print()">Stampa</button>
+  </div>
+  <div class="zoomrow">
+    <div class="zoomgroup">
+      <span class="label">Carattere</span>
+      <button class="zoom-btn" id="font-dec" type="button">−</button>
+      <span class="zoom-val" id="font-val"></span>
+      <button class="zoom-btn" id="font-inc" type="button">+</button>
+    </div>
+    <div class="zoomgroup">
+      <span class="label">Spaziatura righe</span>
+      <button class="zoom-btn" id="pad-dec" type="button">−</button>
+      <span class="zoom-val" id="pad-val"></span>
+      <button class="zoom-btn" id="pad-inc" type="button">+</button>
+    </div>
   </div>
   <p class="meta" id="meta"></p>
 </div>
@@ -331,10 +400,10 @@
       const emptyTr = document.createElement('tr');
       emptyTr.className = 'empty-row';
       const headCols = document.querySelectorAll('#head tr th').length;
-      const cols = headCols || 5;
+      const cols = headCols || 6;
       for (let i = 0; i < cols; i++) {
         const td = document.createElement('td');
-        if (i === cols - 1) {
+        if (i === cols - 2) {
           td.appendChild(makeAddBtn(emptyTr));
           td.appendChild(makeDelBtn(emptyTr));
         }
@@ -367,18 +436,20 @@
     const parse = type === 'A' ? parseA : (type === 'B' ? parseB : parseC);
 
     head.innerHTML = type === 'A'
-      ? '<tr><th class="c-date">Periodo</th><th class="c-room">Camera</th><th class="c-stat">Stato</th><th class="c-name">Nome</th><th class="c-pax">N.</th></tr>'
-      : '<tr><th class="b-date">Periodo</th><th class="b-room">Camera</th><th class="b-name">Nome</th><th class="b-board">Tratt.</th><th class="b-pax">N.</th></tr>';
+      ? '<tr><th class="c-date">Periodo</th><th class="c-room">Camera</th><th class="c-stat">Stato</th><th class="c-name">Nome</th><th class="c-pax">N.</th><th class="x-col"></th></tr>'
+      : '<tr><th class="b-date">Periodo</th><th class="b-room">Camera</th><th class="b-name">Nome</th><th class="b-board">Tratt.</th><th class="b-pax">N.</th><th class="x-col"></th></tr>';
 
     let n = 0, withName = 0, scartate = 0;
 
-    for (const line of lines) {
+    for (let li = 0; li < lines.length; li++) {
+      const line = lines[li];
       if (!line.trim()) continue;
       const r = parse(line);
       if (!r) { scartate++; continue; }
 
       n++;
       const tr = document.createElement('tr');
+      tr.dataset.lineIndex = li;
       if (type === 'A') {
         if (r.name) withName++;
         const lead =
@@ -404,6 +475,20 @@
       // append the + button into the last cell
       const lastTd = tr.lastElementChild;
       lastTd.appendChild(makeAddBtn(tr));
+      lastTd.appendChild(makeDelBtn(tr));
+
+      // X column: removes this row's source line from the textarea and regenerates
+      const xTd = document.createElement('td');
+      xTd.className = 'x-col';
+      const xBtn = document.createElement('button');
+      xBtn.className = 'x-del-btn';
+      xBtn.title = 'Elimina riga';
+      xBtn.textContent = '✕';
+      xBtn.addEventListener('click', function() {
+        eliminaRigaInput(li);
+      });
+      xTd.appendChild(xBtn);
+      tr.appendChild(xTd);
 
       tbody.appendChild(tr);
     }
@@ -415,7 +500,61 @@
       : `Tipo ${type} · ${n} camere${scrap}`;
   }
 
+  // Rimuove la riga "li" dal testo grezzo nel textarea e ricostruisce la tabella
+  function eliminaRigaInput(li) {
+    const ta = document.getElementById('input');
+    const lines = ta.value.split('\n');
+    lines.splice(li, 1);
+    ta.value = lines.join('\n');
+    genera();
+  }
+
   document.getElementById('input').addEventListener('input', genera);
+
+  // ---- Zoom carattere / spaziatura righe (persistito) ----
+  const FONT_MIN = 9, FONT_MAX = 18, FONT_DEFAULT = 12;
+  const PAD_MIN = 2, PAD_MAX = 12, PAD_DEFAULT = 5;
+  const LS_FONT = 'foglio-camere-font-size';
+  const LS_PAD  = 'foglio-camere-row-pad';
+
+  function loadNum(key, def, min, max) {
+    const v = parseInt(localStorage.getItem(key), 10);
+    if (Number.isFinite(v) && v >= min && v <= max) return v;
+    return def;
+  }
+
+  let fontSize = loadNum(LS_FONT, FONT_DEFAULT, FONT_MIN, FONT_MAX);
+  let rowPad   = loadNum(LS_PAD, PAD_DEFAULT, PAD_MIN, PAD_MAX);
+
+  function applyZoom() {
+    document.documentElement.style.setProperty('--font-size', fontSize + 'px');
+    document.documentElement.style.setProperty('--row-pad', rowPad + 'px');
+    document.getElementById('font-val').textContent = fontSize;
+    document.getElementById('pad-val').textContent = rowPad;
+  }
+
+  document.getElementById('font-inc').addEventListener('click', function() {
+    fontSize = Math.min(FONT_MAX, fontSize + 1);
+    localStorage.setItem(LS_FONT, fontSize);
+    applyZoom();
+  });
+  document.getElementById('font-dec').addEventListener('click', function() {
+    fontSize = Math.max(FONT_MIN, fontSize - 1);
+    localStorage.setItem(LS_FONT, fontSize);
+    applyZoom();
+  });
+  document.getElementById('pad-inc').addEventListener('click', function() {
+    rowPad = Math.min(PAD_MAX, rowPad + 1);
+    localStorage.setItem(LS_PAD, rowPad);
+    applyZoom();
+  });
+  document.getElementById('pad-dec').addEventListener('click', function() {
+    rowPad = Math.max(PAD_MIN, rowPad - 1);
+    localStorage.setItem(LS_PAD, rowPad);
+    applyZoom();
+  });
+
+  applyZoom();
   genera();
 </script>
 
