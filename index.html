@@ -3,8 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<link rel="manifest" href="manifest.json">
-<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="manifest" href="manifest.json?v=2">
+<link rel="icon" href="icon-512.png?v=2" type="image/png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png?v=2">
 <meta name="theme-color" content="#7ab87a">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -172,6 +173,45 @@
   }
   .x-del-btn:hover { opacity: 1; }
   .x-del-btn:active { transform: scale(0.85); }
+
+  .edit-col { width: 22px; }
+  .edit-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    border: none;
+    background: none;
+    cursor: pointer;
+    padding: 0;
+    opacity: .55;
+    transition: opacity .15s, transform .1s;
+  }
+  .edit-btn:hover { opacity: 1; }
+  .edit-btn:active { transform: scale(0.85); }
+  .edit-btn svg { width: 14px; height: 14px; display: block; }
+  .edit-pencil svg { stroke: #3b6fd1; }
+  .edit-check svg { stroke: #2e9e4f; }
+
+  tr.editing-row td {
+    padding-top: 3px;
+    padding-bottom: 3px;
+  }
+  .edit-input {
+    width: 100%;
+    box-sizing: border-box;
+    font: inherit;
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 11px;
+    padding: 4px 6px;
+    border: 1px solid var(--accent);
+    border-radius: 5px;
+    background: #fbfaff;
+    color: var(--ink);
+    white-space: nowrap;
+  }
+  .edit-input:focus { outline: none; box-shadow: 0 0 0 2px rgba(107,78,160,.15); }
   th {
     text-align: left;
     font-weight: 600;
@@ -227,7 +267,7 @@
     table { font-size: 9.5px; }
     td, th { padding: 2.5px 4px; }
     thead { display: none; }
-    .add-row-btn, .del-row-btn, .x-del-btn, .x-col { display: none; }
+    .add-row-btn, .del-row-btn, .x-del-btn, .x-col, .edit-btn, .edit-col { display: none; }
   }
 </style>
 </head>
@@ -351,10 +391,10 @@
       const emptyTr = document.createElement('tr');
       emptyTr.className = 'empty-row';
       const headCols = document.querySelectorAll('#head tr th').length;
-      const cols = headCols || 6;
+      const cols = headCols || 7;
       for (let i = 0; i < cols; i++) {
         const td = document.createElement('td');
-        if (i === cols - 2) {
+        if (i === cols - 3) {
           td.appendChild(makeAddBtn(emptyTr));
           td.appendChild(makeDelBtn(emptyTr));
         }
@@ -376,6 +416,71 @@
     return btn;
   }
 
+  const PENCIL_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg>';
+  const CHECK_SVG  = '<svg viewBox="0 0 24 24" fill="none" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>';
+
+  // Crea il pulsante matita che attiva la modalità edit per la riga "tr" (riga generata, line index "li")
+  function makeEditBtn(tr, li) {
+    const btn = document.createElement('button');
+    btn.className = 'edit-btn edit-pencil';
+    btn.title = 'Modifica riga';
+    btn.innerHTML = PENCIL_SVG;
+    btn.addEventListener('click', function() {
+      entraInEdit(tr, li, btn);
+    });
+    return btn;
+  }
+
+  // Sostituisce il contenuto della riga con un singolo input che contiene il testo grezzo originale
+  function entraInEdit(tr, li, pencilBtn) {
+    const ta = document.getElementById('input');
+    const lines = ta.value.split('\n');
+    const original = lines[li] !== undefined ? lines[li] : '';
+
+    tr.classList.add('editing-row');
+    const colCount = tr.children.length;
+    tr.innerHTML = '';
+
+    const td = document.createElement('td');
+    td.colSpan = colCount - 1; // tutta la riga tranne la colonna check/edit
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'edit-input';
+    input.value = original;
+    td.appendChild(input);
+    tr.appendChild(td);
+
+    const checkTd = document.createElement('td');
+    const checkBtn = document.createElement('button');
+    checkBtn.className = 'edit-btn edit-check';
+    checkBtn.title = 'Confirma modifica';
+    checkBtn.innerHTML = CHECK_SVG;
+    checkBtn.addEventListener('click', function() {
+      confermaEdit(li, input.value);
+    });
+    checkTd.appendChild(checkBtn);
+    tr.appendChild(checkTd);
+
+    input.addEventListener('keydown', function(ev) {
+      if (ev.key === 'Enter') {
+        ev.preventDefault();
+        confermaEdit(li, input.value);
+      }
+    });
+
+    input.focus();
+    input.setSelectionRange(input.value.length, input.value.length);
+  }
+
+  // Scrive il nuovo testo della riga "li" nel textarea grezzo e rigenera la tabella
+  function confermaEdit(li, newValue) {
+    const ta = document.getElementById('input');
+    const lines = ta.value.split('\n');
+    lines[li] = newValue;
+    ta.value = lines.join('\n');
+    genera();
+  }
+
   function genera() {
     const lines = document.getElementById('input').value.split('\n');
     const head  = document.getElementById('head');
@@ -387,8 +492,8 @@
     const parse = type === 'A' ? parseA : (type === 'B' ? parseB : parseC);
 
     head.innerHTML = type === 'A'
-      ? '<tr><th class="c-date">Periodo</th><th class="c-room">Camera</th><th class="c-stat">Stato</th><th class="c-name">Nome</th><th class="c-pax">N.</th><th class="x-col"></th></tr>'
-      : '<tr><th class="b-date">Periodo</th><th class="b-room">Camera</th><th class="b-name">Nome</th><th class="b-board">Tratt.</th><th class="b-pax">N.</th><th class="x-col"></th></tr>';
+      ? '<tr><th class="c-date">Periodo</th><th class="c-room">Camera</th><th class="c-stat">Stato</th><th class="c-name">Nome</th><th class="c-pax">N.</th><th class="edit-col"></th><th class="x-col"></th></tr>'
+      : '<tr><th class="b-date">Periodo</th><th class="b-room">Camera</th><th class="b-name">Nome</th><th class="b-board">Tratt.</th><th class="b-pax">N.</th><th class="edit-col"></th><th class="x-col"></th></tr>';
 
     let n = 0, withName = 0, scartate = 0;
 
@@ -426,6 +531,12 @@
       // append the + button into the last cell
       const lastTd = tr.lastElementChild;
       lastTd.appendChild(makeAddBtn(tr));
+
+      // Edit column: matita per modificare la riga grezza
+      const editTd = document.createElement('td');
+      editTd.className = 'edit-col';
+      editTd.appendChild(makeEditBtn(tr, li));
+      tr.appendChild(editTd);
 
       // X column: removes this row's source line from the textarea and regenerates
       const xTd = document.createElement('td');

@@ -1,9 +1,11 @@
-const CACHE = 'foglio-camere-v4';
+const CACHE = 'foglio-camere-v5';
 const ASSETS = [
   './',
   './index.html',
-  './icon-192.png',
-  './icon-512.png'
+  './icon-192.png?v=2',
+  './icon-512.png?v=2',
+  './apple-touch-icon.png?v=2',
+  './manifest.json'
 ];
 
 self.addEventListener('install', e => {
@@ -26,10 +28,15 @@ self.addEventListener('activate', e => {
   );
 });
 
-// network-first per HTML: prende sempre l'ultima versione quando online,
-// usa la cache solo come fallback offline
+// network-first per HTML, manifest e icone: prende sempre l'ultima versione
+// quando online, usa la cache solo come fallback offline.
+// Questo forza l'aggiornamento del logo anche su app già installate.
 self.addEventListener('fetch', e => {
-  if (e.request.mode === 'navigate' || e.request.destination === 'document') {
+  const url = e.request.url;
+  const isDoc = e.request.mode === 'navigate' || e.request.destination === 'document';
+  const isIconOrManifest = /icon-(192|512)\.png|apple-touch-icon\.png|manifest\.json/.test(url);
+
+  if (isDoc || isIconOrManifest) {
     e.respondWith(
       fetch(e.request)
         .then(res => {
