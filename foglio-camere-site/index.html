@@ -1,0 +1,720 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json?v=2">
+<link rel="icon" href="icon-512.png?v=2" type="image/png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png?v=2">
+<meta name="theme-color" content="#7ab87a">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Foglio camere">
+<title>Foglio camere</title>
+<style>
+  :root {
+    --ink: #1a1a1a;
+    --line: #d8d8d8;
+    --bg: #f3f1ec;
+    --panel: #ffffff;
+    --accent: #6b4ea0;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: var(--ink);
+    background: var(--bg);
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* ---- area controlli (non stampata) ---- */
+  .controls {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 24px 20px 8px;
+  }
+  .controls h1 {
+    font-size: 18px;
+    font-weight: 600;
+    margin: 0 0 4px;
+  }
+  .controls p {
+    margin: 0 0 14px;
+    font-size: 13px;
+    color: #555;
+    line-height: 1.5;
+  }
+  textarea {
+    width: 100%;
+    min-height: 220px;
+    padding: 12px;
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 12px;
+    line-height: 1.5;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--panel);
+    resize: vertical;
+  }
+  .btnrow {
+    display: flex;
+    gap: 10px;
+    margin: 12px 0 4px;
+    flex-wrap: wrap;
+  }
+  button {
+    font: inherit;
+    font-size: 14px;
+    font-weight: 500;
+    padding: 9px 18px;
+    border: 1px solid var(--accent);
+    border-radius: 8px;
+    cursor: pointer;
+    background: var(--accent);
+    color: #fff;
+  }
+  button.secondary {
+    background: #fff;
+    color: var(--accent);
+  }
+  button:active { transform: translateY(1px); }
+  .meta {
+    font-size: 12px;
+    color: #666;
+    margin: 8px 0 0;
+  }
+
+  /* ---- foglio (stampato) ---- */
+  .sheet {
+    background: var(--panel);
+    max-width: 900px;
+    margin: 18px auto 40px;
+    padding: 28px 32px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+  }
+  td, th {
+    padding: 5px 4px;
+    vertical-align: baseline;
+    white-space: nowrap;
+  }
+  .add-row-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    border: 1px solid #ccc;
+    background: #fff;
+    color: #aaa;
+    font-size: 14px;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0;
+    margin-left: 6px;
+    vertical-align: middle;
+    transition: border-color .15s, color .15s;
+    flex-shrink: 0;
+  }
+  .add-row-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .add-row-btn:active { transform: none; }
+  .del-row-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    border: 1px solid #ccc;
+    background: #fff;
+    color: #aaa;
+    font-size: 16px;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0;
+    margin-left: 4px;
+    vertical-align: middle;
+    transition: border-color .15s, color .15s;
+    flex-shrink: 0;
+  }
+  .del-row-btn:hover { border-color: #c0392b; color: #c0392b; }
+  .del-row-btn:active { transform: none; }
+  tr.empty-row td {
+    border-bottom: 1px solid var(--line);
+    padding: 0;
+    height: 22px;
+  }
+  .x-col { width: 22px; }
+  .x-del-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    border: none;
+    background: none;
+    color: #d24b3f;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0;
+    opacity: .55;
+    transition: opacity .15s, transform .1s;
+  }
+  .x-del-btn:hover { opacity: 1; }
+  .x-del-btn:active { transform: scale(0.85); }
+
+  /* ---- editing per singolo campo ---- */
+  .edit-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 14px;
+    height: 14px;
+    border: none;
+    background: none;
+    cursor: pointer;
+    padding: 0;
+    opacity: 0;
+    transition: opacity .15s, transform .1s;
+    vertical-align: middle;
+    flex-shrink: 0;
+  }
+  .editable-cell:hover .edit-btn,
+  .inline-editable:hover .edit-btn { opacity: .6; }
+  .edit-btn:hover { opacity: 1 !important; }
+  .edit-btn:active { transform: scale(0.85); }
+  .edit-btn svg { width: 13px; height: 13px; display: block; }
+  .edit-pencil svg { stroke: #3b6fd1; }
+  .edit-check svg { stroke: #2e9e4f; }
+
+  .editable-cell { position: relative; }
+  .editable-cell .cell-text { margin-right: 4px; }
+  .editable-cell.cell-editing { padding: 2px 4px; }
+
+  .inline-editable {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+  }
+  .inline-editable .cell-text { display: inline; }
+
+  .edit-input {
+    font: inherit;
+    font-size: 11px;
+    padding: 2px 5px;
+    border: 1px solid var(--accent);
+    border-radius: 5px;
+    background: #fbfaff;
+    color: var(--ink);
+  }
+  .edit-input:focus { outline: none; box-shadow: 0 0 0 2px rgba(107,78,160,.15); }
+  .edit-input-inline {
+    width: 90px;
+  }
+  th {
+    text-align: left;
+    font-weight: 600;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    color: #888;
+    border-bottom: 1px solid var(--line);
+    padding-bottom: 6px;
+  }
+  .c-date  { width: 16%; }
+  .c-room  { width: 12%; }
+  .c-stat  { width: 20%; }
+  .c-name  { width: 40%; }
+  .c-pax   { width: 12%; text-align: right; padding-right: 8px; }
+  th.c-pax { text-align: right; }
+
+  .c-lead { white-space: nowrap; }
+  .lead {
+    display: flex;
+    align-items: flex-end;
+    width: 100%;
+  }
+  .lead > span { line-height: 1.4; }
+  .lead-stat, .lead-name, .lead-pax { white-space: nowrap; }
+  .lead-name { margin-left: 8px; }
+  .lead-fill {
+    flex: 1 1 auto;
+    min-width: 12px;
+    border-bottom: 1px dotted #cfcfcf;
+    margin: 0 6px 4px;
+  }
+  .lead-pax { padding-right: 4px; }
+
+  .b-date  { width: 22%; }
+  .b-room  { width: 13%; }
+  .b-name  { width: 38%; }
+  .b-board { width: 15%; }
+  .b-pax   { width: 12%; text-align: right; padding-right: 8px; }
+  th.b-pax { text-align: right; }
+
+  @media print {
+    @page { size: A4 portrait; margin: 14mm 12mm; }
+    body { background: #fff; }
+    .controls { display: none; }
+    .sheet {
+      margin: 0;
+      padding: 0;
+      border: none;
+      border-radius: 0;
+      max-width: none;
+    }
+    table { font-size: 9.5px; }
+    td, th { padding: 2.5px 4px; }
+    thead { display: none; }
+    .add-row-btn, .del-row-btn, .x-del-btn, .x-col, .edit-btn { display: none !important; }
+  }
+</style>
+</head>
+<body>
+
+<div class="controls">
+  <h1>Foglio camere</h1>
+  <p>Incolla i dati grezzi (una riga per camera). Il formato viene riconosciuto in automatico. Note, messaggi e righe di totale vengono scartati.</p>
+  <textarea id="input" spellcheck="false" placeholder="Incolla qui la lista..."></textarea>
+
+  <div class="btnrow">
+    <button onclick="window.print()">Stampa</button>
+  </div>
+  <p class="meta" id="meta"></p>
+</div>
+
+<div class="sheet">
+  <table>
+    <thead id="head"></thead>
+    <tbody id="rows"></tbody>
+  </table>
+</div>
+
+<script>
+  const BOARD     = /^(FB|HB|BB)$/i;
+  const RANGEDATE = /^\d{1,2}\.\d{1,2}-\d{1,2}\.\d{1,2}$/;
+  const SLASHDATE = /^\d{1,2}\/\d{1,2}\/\d{2,4}$/;
+  // indicatore: M oppure un numero, eventualmente concatenati con "+"
+  const INDICATOR = /^(M|\d+)(\+(M|\d+))*$/i;
+
+  function esc(s) {
+    return (s || '').replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+  }
+
+  // DD/MM/YY + DD/MM/YY -> DD.MM-DD.MM
+  function fmtRange(a, b) {
+    const f = s => { const p = s.split('/'); return p[0].padStart(2,'0') + '.' + p[1].padStart(2,'0'); };
+    return f(a) + '-' + f(b);
+  }
+
+  function lineType(t) {
+    if (!t[0]) return null;
+    if (SLASHDATE.test(t[0]) && t[1] && SLASHDATE.test(t[1])) return 'B';
+    const slash = t.filter(x => SLASHDATE.test(x));
+    if (slash.length >= 2) return 'C';
+    if (t.some(x => RANGEDATE.test(x))) return 'A';
+    return null;
+  }
+
+  function detectType(lines) {
+    const c = { A: 0, B: 0, C: 0 };
+    for (const l of lines) {
+      const ty = lineType(l.trim().split(/\s+/));
+      if (ty) c[ty]++;
+    }
+    return c.A >= c.B && c.A >= c.C ? 'A' : (c.B >= c.C ? 'B' : 'C');
+  }
+
+  // ---- Tipo A: 106. x FB 14.06-22.06 NOME ... PAX P ----
+  function parseA(line) {
+    const t = line.trim().split(/\s+/);
+    if (t.length < 4) return null;
+    const boardIdx = t.findIndex(x => BOARD.test(x));
+    if (boardIdx < 1) return null;
+
+    const room   = t[0];
+    const status = t.slice(1, boardIdx).join(' ');
+    const board  = t[boardIdx].toUpperCase();
+    const dates  = (t[boardIdx + 1] && RANGEDATE.test(t[boardIdx + 1])) ? t[boardIdx + 1] : (t[boardIdx + 1] || '');
+
+    let rest = t.slice(boardIdx + 2);
+    if (rest.length && /^p$/i.test(rest[rest.length - 1])) rest = rest.slice(0, -1);
+    let pax = '';
+    if (rest.length && /^\d+$/.test(rest[rest.length - 1])) pax = rest.pop();
+    const nameRaw = rest.join(' ');
+
+    const tokens = nameRaw ? nameRaw.split(/\s+/) : [];
+    const keep = tokens.length > 0 && INDICATOR.test(tokens[tokens.length - 1]);
+    const name = keep ? nameRaw : '';
+
+    return { dates, room, status, board, name, pax };
+  }
+
+  // ---- Tipo B: 15/06/26 19/06/26 126. NOME [IND] PAX FB P ----
+  function parseB(line) {
+    const t = line.trim().split(/\s+/);
+    if (!SLASHDATE.test(t[0]) || !t[1] || !SLASHDATE.test(t[1])) return null;
+    const period   = fmtRange(t[0], t[1]);
+    const room     = t[2] || '';
+    const boardIdx = t.findIndex(x => BOARD.test(x));
+    const board    = boardIdx !== -1 ? t[boardIdx].toUpperCase() : '';
+    let seg = t.slice(3, boardIdx !== -1 ? boardIdx : t.length);
+    if (seg.length && /^p$/i.test(seg[seg.length - 1])) seg.pop();
+    let pax = '';
+    if (seg.length && /^\d+$/.test(seg[seg.length - 1])) pax = seg.pop(); // ultimo numero = persone
+    const name = seg.join(' '); // eventuale indicatore resta nel nome
+    return { period, room, name, board, pax };
+  }
+
+  // ---- Tipo C: 126. PAX NOME [IND] FB P 15/06/26 19/06/26 ----
+  function parseC(line) {
+    const t = line.trim().split(/\s+/);
+    const slash = t.filter(x => SLASHDATE.test(x));
+    if (slash.length < 2) return null;
+    const period   = fmtRange(slash[0], slash[1]);
+    const room     = t[0];
+    const boardIdx = t.findIndex(x => BOARD.test(x));
+    const board    = boardIdx !== -1 ? t[boardIdx].toUpperCase() : '';
+    let seg = t.slice(1, boardIdx !== -1 ? boardIdx : t.length);
+    let pax = '';
+    if (seg.length && /^\d+$/.test(seg[0])) pax = seg.shift(); // primo numero = persone
+    const name = seg.join(' '); // eventuale indicatore resta nel nome
+    return { period, room, name, board, pax };
+  }
+
+  // Stato strutturato: un array di oggetti riga, ciascuno con i campi del tipo rilevato.
+  let rowsState = [];
+  let currentType = 'A';
+
+  function makeAddBtn(insertAfterRow) {
+    const btn = document.createElement('button');
+    btn.className = 'add-row-btn';
+    btn.title = 'Aggiungi riga vuota sotto';
+    btn.textContent = '+';
+    btn.addEventListener('click', function() {
+      const emptyTr = document.createElement('tr');
+      emptyTr.className = 'empty-row';
+      const headCols = document.querySelectorAll('#head tr th').length;
+      const cols = headCols || 6;
+      for (let i = 0; i < cols; i++) {
+        const td = document.createElement('td');
+        if (i === cols - 2) {
+          td.appendChild(makeAddBtn(emptyTr));
+          td.appendChild(makeDelBtn(emptyTr));
+        }
+        emptyTr.appendChild(td);
+      }
+      insertAfterRow.insertAdjacentElement('afterend', emptyTr);
+    });
+    return btn;
+  }
+
+  function makeDelBtn(rowToRemove) {
+    const btn = document.createElement('button');
+    btn.className = 'del-row-btn';
+    btn.title = 'Rimuovi riga';
+    btn.textContent = '−';
+    btn.addEventListener('click', function() {
+      rowToRemove.remove();
+    });
+    return btn;
+  }
+
+  const PENCIL_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg>';
+  const CHECK_SVG  = '<svg viewBox="0 0 24 24" fill="none" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>';
+
+  // Estrae il numero iniziale da una stringa camera (es. "106." -> 106, "12A" -> 12)
+  function roomNumber(room) {
+    const m = String(room || '').match(/\d+/);
+    return m ? parseInt(m[0], 10) : Infinity;
+  }
+
+  // Ricostruisce la riga grezza testuale a partire dai campi strutturati,
+  // nel formato del tipo corrente, cosi' il textarea resta sempre sincronizzato.
+  function serializeRow(r, type) {
+    if (type === 'A') {
+      // formato: room status board dates [name] [pax P]
+      const parts = [r.room, r.status, r.board || 'FB', r.dates];
+      if (r.name) parts.push(r.name);
+      if (r.pax) parts.push(r.pax, 'P');
+      return parts.filter(x => x !== undefined && x !== '').join(' ');
+    } else {
+      // tipo B/C: usiamo sempre il formato B per la riscrittura, e' equivalente
+      const [d1, d2] = expandPeriod(r.period);
+      const parts = [d1, d2, r.room];
+      if (r.name) parts.push(r.name);
+      if (r.pax) parts.push(r.pax);
+      if (r.board) parts.push(r.board);
+      parts.push('P');
+      return parts.join(' ');
+    }
+  }
+
+  // DD.MM-DD.MM -> [DD/MM/YY, DD/MM/YY] usando l'anno corrente come fallback
+  function expandPeriod(period) {
+    const m = String(period || '').match(/^(\d{1,2})\.(\d{1,2})-(\d{1,2})\.(\d{1,2})$/);
+    if (!m) return ['', ''];
+    const yy = new Date().getFullYear().toString().slice(-2);
+    const f = (d, mo) => `${d.padStart(2,'0')}/${mo.padStart(2,'0')}/${yy}`;
+    return [f(m[1], m[2]), f(m[3], m[4])];
+  }
+
+  // Riscrive il textarea sulla base dello stato strutturato corrente (ordine = ordine visuale)
+  function syncTextarea() {
+    const ta = document.getElementById('input');
+    ta.value = rowsState.map(r => serializeRow(r, currentType)).join('\n');
+  }
+
+  // Ordina rowsState per numero di camera crescente e ridisegna
+  function sortByRoomAndRender() {
+    rowsState.sort((a, b) => roomNumber(a.room) - roomNumber(b.room));
+    syncTextarea();
+    render();
+  }
+
+  // Aggiorna un campo di una riga nello stato; se il campo e' "room" riordina tutto
+  function updateField(idx, field, value) {
+    rowsState[idx][field] = value;
+    if (field === 'room') {
+      sortByRoomAndRender();
+    } else {
+      syncTextarea();
+      render();
+    }
+  }
+
+  function eliminaRiga(idx) {
+    rowsState.splice(idx, 1);
+    syncTextarea();
+    render();
+  }
+
+  // Crea una cella editabile: mostra il testo con una matita; al click la matita
+  // diventa un campo input con un check verde; Invio o click sul check confermano.
+  function editableCell(value, idx, field, extraClass) {
+    const td = document.createElement('td');
+    if (extraClass) td.className = extraClass;
+    td.classList.add('editable-cell');
+
+    const span = document.createElement('span');
+    span.className = 'cell-text';
+    span.textContent = value || '';
+
+    const pencil = document.createElement('button');
+    pencil.className = 'edit-btn edit-pencil';
+    pencil.title = 'Modifica';
+    pencil.innerHTML = PENCIL_SVG;
+
+    td.appendChild(span);
+    td.appendChild(pencil);
+
+    pencil.addEventListener('click', function() {
+      startCellEdit(td, value, idx, field);
+    });
+
+    return td;
+  }
+
+  function startCellEdit(td, value, idx, field) {
+    td.innerHTML = '';
+    td.classList.add('cell-editing');
+
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'edit-input';
+    input.value = value || '';
+
+    const check = document.createElement('button');
+    check.className = 'edit-btn edit-check';
+    check.title = 'Confirma';
+    check.innerHTML = CHECK_SVG;
+
+    function confirmEdit() {
+      updateField(idx, field, input.value.trim());
+    }
+
+    check.addEventListener('click', confirmEdit);
+    input.addEventListener('keydown', function(ev) {
+      if (ev.key === 'Enter') { ev.preventDefault(); confirmEdit(); }
+    });
+
+    td.appendChild(input);
+    td.appendChild(check);
+    input.focus();
+    input.setSelectionRange(input.value.length, input.value.length);
+  }
+
+  function render() {
+    const head  = document.getElementById('head');
+    const tbody = document.getElementById('rows');
+    head.innerHTML = '';
+    tbody.innerHTML = '';
+
+    head.innerHTML = currentType === 'A'
+      ? '<tr><th class="c-date">Periodo</th><th class="c-room">Camera</th><th class="c-stat">Stato</th><th class="c-name">Nome</th><th class="c-pax">N.</th><th class="x-col"></th></tr>'
+      : '<tr><th class="b-date">Periodo</th><th class="b-room">Camera</th><th class="b-name">Nome</th><th class="b-board">Tratt.</th><th class="b-pax">N.</th><th class="x-col"></th></tr>';
+
+    let withName = 0;
+
+    rowsState.forEach((r, idx) => {
+      const tr = document.createElement('tr');
+
+      if (currentType === 'A') {
+        if (r.name) withName++;
+        tr.appendChild(editableCell(r.dates, idx, 'dates', 'c-date'));
+        tr.appendChild(editableCell(r.room, idx, 'room', 'c-room'));
+
+        const leadTd = document.createElement('td');
+        leadTd.className = 'c-lead';
+        leadTd.colSpan = 3;
+        const lead = document.createElement('div');
+        lead.className = 'lead';
+
+        const statSpan = editableInlineSpan(r.status, idx, 'status', 'lead-stat');
+        lead.appendChild(statSpan);
+
+        const nameSpan = editableInlineSpan(r.name, idx, 'name', 'lead-name');
+        lead.appendChild(nameSpan);
+
+        const fill = document.createElement('span');
+        fill.className = 'lead-fill';
+        lead.appendChild(fill);
+
+        const paxSpan = editableInlineSpan(r.pax, idx, 'pax', 'lead-pax');
+        lead.appendChild(paxSpan);
+
+        leadTd.appendChild(lead);
+        tr.appendChild(leadTd);
+      } else {
+        tr.appendChild(editableCell(r.period, idx, 'period', 'b-date'));
+        tr.appendChild(editableCell(r.room, idx, 'room', 'b-room'));
+        tr.appendChild(editableCell(r.name, idx, 'name', 'b-name'));
+        tr.appendChild(editableCell(r.board, idx, 'board', 'b-board'));
+        tr.appendChild(editableCell(r.pax, idx, 'pax', 'b-pax'));
+      }
+
+      // append + button
+      const lastTd = tr.lastElementChild;
+      lastTd.appendChild(makeAddBtn(tr));
+
+      // X column
+      const xTd = document.createElement('td');
+      xTd.className = 'x-col';
+      const xBtn = document.createElement('button');
+      xBtn.className = 'x-del-btn';
+      xBtn.title = 'Elimina riga';
+      xBtn.textContent = '✕';
+      xBtn.addEventListener('click', function() { eliminaRiga(idx); });
+      xTd.appendChild(xBtn);
+      tr.appendChild(xTd);
+
+      tbody.appendChild(tr);
+    });
+
+    const meta = document.getElementById('meta');
+    meta.textContent = currentType === 'A'
+      ? `Tipo A · ${rowsState.length} camere · ${withName} con indicatore`
+      : `Tipo ${currentType} · ${rowsState.length} camere`;
+  }
+
+  // Variante inline (span) della cella editabile per i sotto-campi della riga tipo A
+  function editableInlineSpan(value, idx, field, extraClass) {
+    const wrap = document.createElement('span');
+    wrap.className = 'inline-editable ' + (extraClass || '');
+
+    const text = document.createElement('span');
+    text.className = 'cell-text';
+    text.textContent = value || '';
+
+    const pencil = document.createElement('button');
+    pencil.className = 'edit-btn edit-pencil';
+    pencil.title = 'Modifica';
+    pencil.innerHTML = PENCIL_SVG;
+
+    wrap.appendChild(text);
+    wrap.appendChild(pencil);
+
+    pencil.addEventListener('click', function() {
+      startInlineEdit(wrap, value, idx, field);
+    });
+
+    return wrap;
+  }
+
+  function startInlineEdit(wrap, value, idx, field) {
+    wrap.innerHTML = '';
+    wrap.classList.add('cell-editing');
+
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'edit-input edit-input-inline';
+    input.value = value || '';
+
+    const check = document.createElement('button');
+    check.className = 'edit-btn edit-check';
+    check.title = 'Confirma';
+    check.innerHTML = CHECK_SVG;
+
+    function confirmEdit() {
+      updateField(idx, field, input.value.trim());
+    }
+
+    check.addEventListener('click', confirmEdit);
+    input.addEventListener('keydown', function(ev) {
+      if (ev.key === 'Enter') { ev.preventDefault(); confirmEdit(); }
+    });
+
+    wrap.appendChild(input);
+    wrap.appendChild(check);
+    input.focus();
+    input.setSelectionRange(input.value.length, input.value.length);
+  }
+
+  // Costruisce lo stato strutturato a partire dal testo grezzo (usato solo quando
+  // il textarea viene modificato manualmente dall'utente)
+  function rebuildStateFromTextarea() {
+    const lines = document.getElementById('input').value.split('\n');
+    currentType = detectType(lines);
+    const parse = currentType === 'A' ? parseA : (currentType === 'B' ? parseB : parseC);
+    const newState = [];
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      const r = parse(line);
+      if (!r) continue;
+      newState.push(r);
+    }
+    rowsState = newState;
+    render();
+  }
+
+  document.getElementById('input').addEventListener('input', rebuildStateFromTextarea);
+  rebuildStateFromTextarea();
+</script>
+
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('./sw.js').then(reg => {
+        // controlla subito se c'è una versione più recente
+        reg.update();
+        // e ogni volta che l'app torna in primo piano
+        document.addEventListener('visibilitychange', () => {
+          if (document.visibilityState === 'visible') reg.update();
+        });
+      });
+    });
+  }
+</script>
+</body>
+</html>
