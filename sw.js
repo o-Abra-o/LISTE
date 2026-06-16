@@ -1,4 +1,4 @@
-const CACHE = 'foglio-camere-v9';
+const CACHE = 'foglio-camere-v10';
 const ASSETS = [
   './',
   './index.html',

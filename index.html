@@ -514,6 +514,14 @@
     return m ? parseInt(m[0], 10) : Infinity;
   }
 
+  // true se la data di partenza (fine periodo "DD.MM-DD.MM") coincide con oggi
+  function departsToday(r) {
+    const m = String(r.period || '').match(/-(\d{1,2})\.(\d{1,2})$/);
+    if (!m) return false;
+    const now = new Date();
+    return parseInt(m[1], 10) === now.getDate() && parseInt(m[2], 10) === (now.getMonth() + 1);
+  }
+
   // Ricostruisce la riga grezza testuale a partire dai campi strutturati,
   // nel formato del tipo corrente, cosi' il textarea resta sempre sincronizzato.
   function serializeRow(r, type) {
@@ -671,11 +679,23 @@
     }
 
     if (currentType === 'D') {
-      const groups = [['arrivi', 'Arrivi di oggi'], ['presenti', "Gia' presenti"]];
+      // Le camere che partono oggi vengono spostate in "Partenze di oggi" (ordinate per camera),
+      // tolte da arrivi/presenti. La classificazione e' solo visuale: lo stato resta arrivi/presenti.
+      const partenze = [], arrivi = [], presenti = [];
+      rowsState.forEach((r, idx) => {
+        if (departsToday(r)) partenze.push(idx);
+        else if ((r.section || 'presenti') === 'arrivi') arrivi.push(idx);
+        else presenti.push(idx);
+      });
+      partenze.sort((a, b) => roomNumber(rowsState[a].room) - roomNumber(rowsState[b].room));
+
+      const groups = [
+        ['Arrivi di oggi', arrivi],
+        ['Partenze di oggi', partenze],
+        ["Gia' presenti", presenti],
+      ];
       let firstSection = true;
-      groups.forEach(([sec, label]) => {
-        const indices = [];
-        rowsState.forEach((r, idx) => { if ((r.section || 'presenti') === sec) indices.push(idx); });
+      groups.forEach(([label, indices]) => {
         if (!indices.length) return;
         tbody.appendChild(sectionHeading(label, firstSection));
         firstSection = false;
@@ -688,9 +708,10 @@
     const withName = currentType === 'A' ? rowsState.filter(r => r.name).length : 0;
     const meta = document.getElementById('meta');
     if (currentType === 'D') {
-      const a = rowsState.filter(r => (r.section || 'presenti') === 'arrivi').length;
-      const p = rowsState.length - a;
-      meta.textContent = `Arrivi ${a} · Gia' presenti ${p}`;
+      const part = rowsState.filter(departsToday).length;
+      const arr  = rowsState.filter(r => !departsToday(r) && (r.section || 'presenti') === 'arrivi').length;
+      const pre  = rowsState.length - part - arr;
+      meta.textContent = `Arrivi ${arr} · Partenze ${part} · Gia' presenti ${pre}`;
     } else {
       meta.textContent = currentType === 'A'
         ? `Tipo A · ${rowsState.length} camere · ${withName} con indicatore`
