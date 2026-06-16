@@ -98,10 +98,10 @@
   table {
     width: 100%;
     border-collapse: collapse;
-    font-size: var(--font-size, 12px);
+    font-size: 12px;
   }
   td, th {
-    padding: var(--row-pad, 5px) 4px;
+    padding: 5px 4px;
     vertical-align: baseline;
     white-space: nowrap;
   }
@@ -172,41 +172,6 @@
   }
   .x-del-btn:hover { opacity: 1; }
   .x-del-btn:active { transform: scale(0.85); }
-
-  /* ---- controlli zoom font/spaziatura ---- */
-  .zoomrow {
-    display: flex;
-    align-items: center;
-    gap: 14px;
-    margin: 10px 0 4px;
-    flex-wrap: wrap;
-  }
-  .zoomgroup {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 12px;
-    color: #555;
-  }
-  .zoomgroup span.label { margin-right: 2px; }
-  .zoom-btn {
-    width: 26px;
-    height: 26px;
-    padding: 0;
-    font-size: 15px;
-    font-weight: 600;
-    border-radius: 6px;
-    border: 1px solid var(--line);
-    background: #fff;
-    color: var(--accent);
-  }
-  .zoom-btn:hover { border-color: var(--accent); }
-  .zoom-val {
-    min-width: 28px;
-    text-align: center;
-    font-size: 12px;
-    color: #777;
-  }
   th {
     text-align: left;
     font-weight: 600;
@@ -275,20 +240,6 @@
 
   <div class="btnrow">
     <button onclick="window.print()">Stampa</button>
-  </div>
-  <div class="zoomrow">
-    <div class="zoomgroup">
-      <span class="label">Carattere</span>
-      <button class="zoom-btn" id="font-dec" type="button">−</button>
-      <span class="zoom-val" id="font-val"></span>
-      <button class="zoom-btn" id="font-inc" type="button">+</button>
-    </div>
-    <div class="zoomgroup">
-      <span class="label">Spaziatura righe</span>
-      <button class="zoom-btn" id="pad-dec" type="button">−</button>
-      <span class="zoom-val" id="pad-val"></span>
-      <button class="zoom-btn" id="pad-inc" type="button">+</button>
-    </div>
   </div>
   <p class="meta" id="meta"></p>
 </div>
@@ -510,51 +461,6 @@
   }
 
   document.getElementById('input').addEventListener('input', genera);
-
-  // ---- Zoom carattere / spaziatura righe (persistito) ----
-  const FONT_MIN = 9, FONT_MAX = 18, FONT_DEFAULT = 12;
-  const PAD_MIN = 2, PAD_MAX = 12, PAD_DEFAULT = 5;
-  const LS_FONT = 'foglio-camere-font-size';
-  const LS_PAD  = 'foglio-camere-row-pad';
-
-  function loadNum(key, def, min, max) {
-    const v = parseInt(localStorage.getItem(key), 10);
-    if (Number.isFinite(v) && v >= min && v <= max) return v;
-    return def;
-  }
-
-  let fontSize = loadNum(LS_FONT, FONT_DEFAULT, FONT_MIN, FONT_MAX);
-  let rowPad   = loadNum(LS_PAD, PAD_DEFAULT, PAD_MIN, PAD_MAX);
-
-  function applyZoom() {
-    document.documentElement.style.setProperty('--font-size', fontSize + 'px');
-    document.documentElement.style.setProperty('--row-pad', rowPad + 'px');
-    document.getElementById('font-val').textContent = fontSize;
-    document.getElementById('pad-val').textContent = rowPad;
-  }
-
-  document.getElementById('font-inc').addEventListener('click', function() {
-    fontSize = Math.min(FONT_MAX, fontSize + 1);
-    localStorage.setItem(LS_FONT, fontSize);
-    applyZoom();
-  });
-  document.getElementById('font-dec').addEventListener('click', function() {
-    fontSize = Math.max(FONT_MIN, fontSize - 1);
-    localStorage.setItem(LS_FONT, fontSize);
-    applyZoom();
-  });
-  document.getElementById('pad-inc').addEventListener('click', function() {
-    rowPad = Math.min(PAD_MAX, rowPad + 1);
-    localStorage.setItem(LS_PAD, rowPad);
-    applyZoom();
-  });
-  document.getElementById('pad-dec').addEventListener('click', function() {
-    rowPad = Math.max(PAD_MIN, rowPad - 1);
-    localStorage.setItem(LS_PAD, rowPad);
-    applyZoom();
-  });
-
-  applyZoom();
   genera();
 </script>
 
