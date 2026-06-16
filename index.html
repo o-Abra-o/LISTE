@@ -81,6 +81,36 @@
     color: var(--accent);
   }
   button:active { transform: translateY(1px); }
+  .toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: #555;
+    cursor: pointer;
+    user-select: none;
+  }
+  .toggle input { position: absolute; opacity: 0; width: 0; height: 0; }
+  .switch {
+    width: 38px; height: 22px;
+    border-radius: 11px;
+    background: #ccc;
+    position: relative;
+    transition: background .15s;
+    flex-shrink: 0;
+  }
+  .switch::after {
+    content: '';
+    position: absolute;
+    top: 2px; left: 2px;
+    width: 18px; height: 18px;
+    border-radius: 50%;
+    background: #fff;
+    transition: transform .15s;
+    box-shadow: 0 1px 2px rgba(0,0,0,.3);
+  }
+  .toggle input:checked + .switch { background: var(--accent); }
+  .toggle input:checked + .switch::after { transform: translateX(16px); }
   .meta {
     font-size: 12px;
     color: #666;
@@ -193,6 +223,8 @@
   .editable-cell:hover .edit-btn,
   .inline-editable:hover .edit-btn { opacity: .6; }
   .edit-btn:hover { opacity: 1 !important; }
+  /* in edit mode il check resta visibile finche' non si conferma */
+  .cell-editing .edit-check { opacity: 1 !important; }
   .edit-btn:active { transform: scale(0.85); }
   .edit-btn svg { width: 13px; height: 13px; display: block; }
   .edit-pencil svg { stroke: #3b6fd1; }
@@ -263,6 +295,18 @@
   .b-pax   { width: 12%; text-align: right; padding-right: 8px; }
   th.b-pax { text-align: right; }
 
+  tr.section-head td {
+    text-align: center;
+    font-weight: 700;
+    font-size: 1.25em;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    padding: 14px 4px 6px;
+    border-bottom: 1.5px solid var(--ink);
+    color: var(--ink);
+  }
+  tr.section-head.first td { padding-top: 0; }
+
   @media print {
     @page { size: A4 portrait; margin: 14mm 12mm; }
     body { background: #fff; }
@@ -274,7 +318,7 @@
       border-radius: 0;
       max-width: none;
     }
-    table { font-size: 9.5px; }
+    table { font-size: var(--print-font, 9.5px); }
     td, th { padding: 2.5px 4px; }
     thead { display: none; }
     .add-row-btn, .del-row-btn, .x-del-btn, .x-col, .edit-btn { display: none !important; }
@@ -289,7 +333,12 @@
   <textarea id="input" spellcheck="false" placeholder="Incolla qui la lista..."></textarea>
 
   <div class="btnrow">
-    <button onclick="window.print()">Stampa</button>
+    <button onclick="stampa()">Stampa</button>
+    <label class="toggle">
+      <input type="checkbox" id="autoResize">
+      <span class="switch"></span>
+      Resize automatico
+    </label>
   </div>
   <p class="meta" id="meta"></p>
 </div>
@@ -393,6 +442,31 @@
     return { period, room, name, board, pax };
   }
 
+  // ---- Tipo D: lista con sezioni "Arrivi del giorno" / "Presenti del giorno",
+  //      righe in formato C, totali e note scartati ----
+  const SEC_ARRIVI   = /arrivi del giorno/i;
+  const SEC_PRESENTI = /presenti del giorno/i;
+
+  function hasSections(lines) {
+    return lines.some(l => SEC_ARRIVI.test(l) || SEC_PRESENTI.test(l));
+  }
+
+  function parseSectioned(lines) {
+    const out = [];
+    let sec = 'arrivi';
+    for (const line of lines) {
+      const l = line.trim();
+      if (!l) continue;
+      if (SEC_ARRIVI.test(l))   { sec = 'arrivi';   continue; }
+      if (SEC_PRESENTI.test(l)) { sec = 'presenti'; continue; }
+      const r = parseC(l);
+      if (!r) continue;          // intestazioni colonne, totali, note: ignorati
+      r.section = sec;
+      out.push(r);
+    }
+    return out;
+  }
+
   // Stato strutturato: un array di oggetti riga, ciascuno con i campi del tipo rilevato.
   let rowsState = [];
   let currentType = 'A';
@@ -449,8 +523,16 @@
       if (r.name) parts.push(r.name);
       if (r.pax) parts.push(r.pax, 'P');
       return parts.filter(x => x !== undefined && x !== '').join(' ');
+    } else if (type === 'C') {
+      // formato C: room pax name board P dd/mm/yy dd/mm/yy
+      const [d1, d2] = expandPeriod(r.period);
+      const parts = [r.room];
+      if (r.pax) parts.push(r.pax);
+      if (r.name) parts.push(r.name);
+      parts.push(r.board || 'FB', 'P', d1, d2);
+      return parts.join(' ');
     } else {
-      // tipo B/C: usiamo sempre il formato B per la riscrittura, e' equivalente
+      // tipo B: dd/mm/yy dd/mm/yy room [name] [pax] board P
       const [d1, d2] = expandPeriod(r.period);
       const parts = [d1, d2, r.room];
       if (r.name) parts.push(r.name);
@@ -473,6 +555,17 @@
   // Riscrive il textarea sulla base dello stato strutturato corrente (ordine = ordine visuale)
   function syncTextarea() {
     const ta = document.getElementById('input');
+    if (currentType === 'D') {
+      const lines = [];
+      [['arrivi', 'Arrivi del giorno'], ['presenti', 'Presenti del giorno']].forEach(([sec, label]) => {
+        const rows = rowsState.filter(r => (r.section || 'presenti') === sec);
+        if (!rows.length) return;
+        lines.push(label);
+        rows.forEach(r => lines.push(serializeRow(r, 'C')));
+      });
+      ta.value = lines.join('\n');
+      return;
+    }
     ta.value = rowsState.map(r => serializeRow(r, currentType)).join('\n');
   }
 
@@ -565,67 +658,94 @@
       ? '<tr><th class="c-date">Periodo</th><th class="c-room">Camera</th><th class="c-stat">Stato</th><th class="c-name">Nome</th><th class="c-pax">N.</th><th class="x-col"></th></tr>'
       : '<tr><th class="b-date">Periodo</th><th class="b-room">Camera</th><th class="b-name">Nome</th><th class="b-board">Tratt.</th><th class="b-pax">N.</th><th class="x-col"></th></tr>';
 
-    let withName = 0;
+    const ncols = document.querySelectorAll('#head tr th').length || 6;
 
-    rowsState.forEach((r, idx) => {
+    function sectionHeading(label, first) {
       const tr = document.createElement('tr');
+      tr.className = 'section-head' + (first ? ' first' : '');
+      const td = document.createElement('td');
+      td.colSpan = ncols;
+      td.textContent = label;
+      tr.appendChild(td);
+      return tr;
+    }
 
-      if (currentType === 'A') {
-        if (r.name) withName++;
-        tr.appendChild(editableCell(r.dates, idx, 'dates', 'c-date'));
-        tr.appendChild(editableCell(r.room, idx, 'room', 'c-room'));
+    if (currentType === 'D') {
+      const groups = [['arrivi', 'Arrivi di oggi'], ['presenti', "Gia' presenti"]];
+      let firstSection = true;
+      groups.forEach(([sec, label]) => {
+        const indices = [];
+        rowsState.forEach((r, idx) => { if ((r.section || 'presenti') === sec) indices.push(idx); });
+        if (!indices.length) return;
+        tbody.appendChild(sectionHeading(label, firstSection));
+        firstSection = false;
+        indices.forEach(idx => tbody.appendChild(buildRow(rowsState[idx], idx)));
+      });
+    } else {
+      rowsState.forEach((r, idx) => tbody.appendChild(buildRow(r, idx)));
+    }
 
-        const leadTd = document.createElement('td');
-        leadTd.className = 'c-lead';
-        leadTd.colSpan = 3;
-        const lead = document.createElement('div');
-        lead.className = 'lead';
-
-        const statSpan = editableInlineSpan(r.status, idx, 'status', 'lead-stat');
-        lead.appendChild(statSpan);
-
-        const nameSpan = editableInlineSpan(r.name, idx, 'name', 'lead-name');
-        lead.appendChild(nameSpan);
-
-        const fill = document.createElement('span');
-        fill.className = 'lead-fill';
-        lead.appendChild(fill);
-
-        const paxSpan = editableInlineSpan(r.pax, idx, 'pax', 'lead-pax');
-        lead.appendChild(paxSpan);
-
-        leadTd.appendChild(lead);
-        tr.appendChild(leadTd);
-      } else {
-        tr.appendChild(editableCell(r.period, idx, 'period', 'b-date'));
-        tr.appendChild(editableCell(r.room, idx, 'room', 'b-room'));
-        tr.appendChild(editableCell(r.name, idx, 'name', 'b-name'));
-        tr.appendChild(editableCell(r.board, idx, 'board', 'b-board'));
-        tr.appendChild(editableCell(r.pax, idx, 'pax', 'b-pax'));
-      }
-
-      // append + button
-      const lastTd = tr.lastElementChild;
-      lastTd.appendChild(makeAddBtn(tr));
-
-      // X column
-      const xTd = document.createElement('td');
-      xTd.className = 'x-col';
-      const xBtn = document.createElement('button');
-      xBtn.className = 'x-del-btn';
-      xBtn.title = 'Elimina riga';
-      xBtn.textContent = '✕';
-      xBtn.addEventListener('click', function() { eliminaRiga(idx); });
-      xTd.appendChild(xBtn);
-      tr.appendChild(xTd);
-
-      tbody.appendChild(tr);
-    });
-
+    const withName = currentType === 'A' ? rowsState.filter(r => r.name).length : 0;
     const meta = document.getElementById('meta');
-    meta.textContent = currentType === 'A'
-      ? `Tipo A · ${rowsState.length} camere · ${withName} con indicatore`
-      : `Tipo ${currentType} · ${rowsState.length} camere`;
+    if (currentType === 'D') {
+      const a = rowsState.filter(r => (r.section || 'presenti') === 'arrivi').length;
+      const p = rowsState.length - a;
+      meta.textContent = `Arrivi ${a} · Gia' presenti ${p}`;
+    } else {
+      meta.textContent = currentType === 'A'
+        ? `Tipo A · ${rowsState.length} camere · ${withName} con indicatore`
+        : `Tipo ${currentType} · ${rowsState.length} camere`;
+    }
+  }
+
+  // Costruisce la <tr> editabile di una singola riga (tipo A oppure B/C/D)
+  function buildRow(r, idx) {
+    const tr = document.createElement('tr');
+
+    if (currentType === 'A') {
+      tr.appendChild(editableCell(r.dates, idx, 'dates', 'c-date'));
+      tr.appendChild(editableCell(r.room, idx, 'room', 'c-room'));
+
+      const leadTd = document.createElement('td');
+      leadTd.className = 'c-lead';
+      leadTd.colSpan = 3;
+      const lead = document.createElement('div');
+      lead.className = 'lead';
+
+      lead.appendChild(editableInlineSpan(r.status, idx, 'status', 'lead-stat'));
+      lead.appendChild(editableInlineSpan(r.name, idx, 'name', 'lead-name'));
+
+      const fill = document.createElement('span');
+      fill.className = 'lead-fill';
+      lead.appendChild(fill);
+
+      lead.appendChild(editableInlineSpan(r.pax, idx, 'pax', 'lead-pax'));
+
+      leadTd.appendChild(lead);
+      tr.appendChild(leadTd);
+    } else {
+      tr.appendChild(editableCell(r.period, idx, 'period', 'b-date'));
+      tr.appendChild(editableCell(r.room, idx, 'room', 'b-room'));
+      tr.appendChild(editableCell(r.name, idx, 'name', 'b-name'));
+      tr.appendChild(editableCell(r.board, idx, 'board', 'b-board'));
+      tr.appendChild(editableCell(r.pax, idx, 'pax', 'b-pax'));
+    }
+
+    // pulsante +
+    tr.lastElementChild.appendChild(makeAddBtn(tr));
+
+    // colonna X
+    const xTd = document.createElement('td');
+    xTd.className = 'x-col';
+    const xBtn = document.createElement('button');
+    xBtn.className = 'x-del-btn';
+    xBtn.title = 'Elimina riga';
+    xBtn.textContent = '✕';
+    xBtn.addEventListener('click', function() { eliminaRiga(idx); });
+    xTd.appendChild(xBtn);
+    tr.appendChild(xTd);
+
+    return tr;
   }
 
   // Variante inline (span) della cella editabile per i sotto-campi della riga tipo A
@@ -685,6 +805,12 @@
   // il textarea viene modificato manualmente dall'utente)
   function rebuildStateFromTextarea() {
     const lines = document.getElementById('input').value.split('\n');
+    if (hasSections(lines)) {
+      currentType = 'D';
+      rowsState = parseSectioned(lines);
+      render();
+      return;
+    }
     currentType = detectType(lines);
     const parse = currentType === 'A' ? parseA : (currentType === 'B' ? parseB : parseC);
     const newState = [];
@@ -697,6 +823,77 @@
     rowsState = newState;
     render();
   }
+
+  // ---- Resize automatico per la stampa ----
+  // Sceglie il font piu' grande (entro limiti leggibili) che fa stare il foglio
+  // nel minor numero di pagine A4 possibile (1, poi 2).
+  const MM = 96 / 25.4;                 // px per mm a 96 dpi
+  const PRINT_W = 186 * MM;             // larghezza utile A4 (210 - margini 12+12)
+  const PAGE_H  = 269 * MM * 0.97;      // altezza utile A4 (297 - margini 14+14), con margine di sicurezza
+  const F_MIN = 8, F_MAX = 15;          // limiti di leggibilita' (px)
+  let autoResize = false;
+
+  const measureCss = document.createElement('style');
+  measureCss.textContent =
+    '#print-measure{position:absolute;left:-99999px;top:0;max-width:none;margin:0;padding:0;border:none;background:#fff;}' +
+    '#print-measure table{font-size:var(--measure-font);width:100%;border-collapse:collapse;}' +
+    '#print-measure td,#print-measure th{padding:2.5px 4px;}' +
+    '#print-measure thead{display:none;}' +
+    '#print-measure .add-row-btn,#print-measure .del-row-btn,#print-measure .x-del-btn,#print-measure .x-col,#print-measure .edit-btn{display:none;}' +
+    '#print-measure .section-head td{font-size:1.25em;}';
+  document.head.appendChild(measureCss);
+
+  function measureHeight(F) {
+    const sheet = document.querySelector('.sheet');
+    const clone = sheet.cloneNode(true);
+    clone.id = 'print-measure';
+    clone.style.width = PRINT_W + 'px';
+    clone.style.setProperty('--measure-font', F + 'px');
+    document.body.appendChild(clone);
+    const h = clone.getBoundingClientRect().height;
+    clone.remove();
+    return h;
+  }
+
+  // Font piu' grande in [F_MIN, F_MAX] la cui altezza sta entro budget; null se nemmeno F_MIN ci sta
+  function largestFit(budget) {
+    if (measureHeight(F_MIN) > budget) return null;
+    if (measureHeight(F_MAX) <= budget) return F_MAX;
+    let lo = F_MIN, hi = F_MAX;
+    for (let i = 0; i < 14; i++) {
+      const mid = (lo + hi) / 2;
+      if (measureHeight(mid) <= budget) lo = mid; else hi = mid;
+    }
+    return lo;
+  }
+
+  function computeAutoFont() {
+    let F = largestFit(PAGE_H);          // prova 1 pagina
+    if (F == null) F = largestFit(2 * PAGE_H); // poi 2 pagine
+    if (F == null) F = F_MIN;            // troppo lungo: font minimo leggibile
+    return Math.round(F * 10) / 10;
+  }
+
+  function applyAutoResize() {
+    if (autoResize) {
+      document.documentElement.style.setProperty('--print-font', computeAutoFont() + 'px');
+    } else {
+      document.documentElement.style.removeProperty('--print-font');
+    }
+  }
+
+  function stampa() { applyAutoResize(); window.print(); }
+  window.addEventListener('beforeprint', applyAutoResize);
+
+  (function initToggle() {
+    const cb = document.getElementById('autoResize');
+    try { autoResize = localStorage.getItem('autoResize') === '1'; } catch (e) {}
+    cb.checked = autoResize;
+    cb.addEventListener('change', function() {
+      autoResize = cb.checked;
+      try { localStorage.setItem('autoResize', autoResize ? '1' : '0'); } catch (e) {}
+    });
+  })();
 
   document.getElementById('input').addEventListener('input', rebuildStateFromTextarea);
   rebuildStateFromTextarea();
