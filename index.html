@@ -174,44 +174,54 @@
   .x-del-btn:hover { opacity: 1; }
   .x-del-btn:active { transform: scale(0.85); }
 
-  .edit-col { width: 22px; }
+  /* ---- editing per singolo campo ---- */
   .edit-btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 16px;
-    height: 16px;
+    width: 14px;
+    height: 14px;
     border: none;
     background: none;
     cursor: pointer;
     padding: 0;
-    opacity: .55;
+    opacity: 0;
     transition: opacity .15s, transform .1s;
+    vertical-align: middle;
+    flex-shrink: 0;
   }
-  .edit-btn:hover { opacity: 1; }
+  .editable-cell:hover .edit-btn,
+  .inline-editable:hover .edit-btn { opacity: .6; }
+  .edit-btn:hover { opacity: 1 !important; }
   .edit-btn:active { transform: scale(0.85); }
-  .edit-btn svg { width: 14px; height: 14px; display: block; }
+  .edit-btn svg { width: 13px; height: 13px; display: block; }
   .edit-pencil svg { stroke: #3b6fd1; }
   .edit-check svg { stroke: #2e9e4f; }
 
-  tr.editing-row td {
-    padding-top: 3px;
-    padding-bottom: 3px;
+  .editable-cell { position: relative; }
+  .editable-cell .cell-text { margin-right: 4px; }
+  .editable-cell.cell-editing { padding: 2px 4px; }
+
+  .inline-editable {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
   }
+  .inline-editable .cell-text { display: inline; }
+
   .edit-input {
-    width: 100%;
-    box-sizing: border-box;
     font: inherit;
-    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
     font-size: 11px;
-    padding: 4px 6px;
+    padding: 2px 5px;
     border: 1px solid var(--accent);
     border-radius: 5px;
     background: #fbfaff;
     color: var(--ink);
-    white-space: nowrap;
   }
   .edit-input:focus { outline: none; box-shadow: 0 0 0 2px rgba(107,78,160,.15); }
+  .edit-input-inline {
+    width: 90px;
+  }
   th {
     text-align: left;
     font-weight: 600;
@@ -267,7 +277,7 @@
     table { font-size: 9.5px; }
     td, th { padding: 2.5px 4px; }
     thead { display: none; }
-    .add-row-btn, .del-row-btn, .x-del-btn, .x-col, .edit-btn, .edit-col { display: none; }
+    .add-row-btn, .del-row-btn, .x-del-btn, .x-col, .edit-btn { display: none !important; }
   }
 </style>
 </head>
@@ -335,6 +345,7 @@
 
     const room   = t[0];
     const status = t.slice(1, boardIdx).join(' ');
+    const board  = t[boardIdx].toUpperCase();
     const dates  = (t[boardIdx + 1] && RANGEDATE.test(t[boardIdx + 1])) ? t[boardIdx + 1] : (t[boardIdx + 1] || '');
 
     let rest = t.slice(boardIdx + 2);
@@ -347,7 +358,7 @@
     const keep = tokens.length > 0 && INDICATOR.test(tokens[tokens.length - 1]);
     const name = keep ? nameRaw : '';
 
-    return { dates, room, status, name, pax };
+    return { dates, room, status, board, name, pax };
   }
 
   // ---- Tipo B: 15/06/26 19/06/26 126. NOME [IND] PAX FB P ----
@@ -382,6 +393,10 @@
     return { period, room, name, board, pax };
   }
 
+  // Stato strutturato: un array di oggetti riga, ciascuno con i campi del tipo rilevato.
+  let rowsState = [];
+  let currentType = 'A';
+
   function makeAddBtn(insertAfterRow) {
     const btn = document.createElement('button');
     btn.className = 'add-row-btn';
@@ -391,10 +406,10 @@
       const emptyTr = document.createElement('tr');
       emptyTr.className = 'empty-row';
       const headCols = document.querySelectorAll('#head tr th').length;
-      const cols = headCols || 7;
+      const cols = headCols || 6;
       for (let i = 0; i < cols; i++) {
         const td = document.createElement('td');
-        if (i === cols - 3) {
+        if (i === cols - 2) {
           td.appendChild(makeAddBtn(emptyTr));
           td.appendChild(makeDelBtn(emptyTr));
         }
@@ -419,159 +434,272 @@
   const PENCIL_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg>';
   const CHECK_SVG  = '<svg viewBox="0 0 24 24" fill="none" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>';
 
-  // Crea il pulsante matita che attiva la modalità edit per la riga "tr" (riga generata, line index "li")
-  function makeEditBtn(tr, li) {
-    const btn = document.createElement('button');
-    btn.className = 'edit-btn edit-pencil';
-    btn.title = 'Modifica riga';
-    btn.innerHTML = PENCIL_SVG;
-    btn.addEventListener('click', function() {
-      entraInEdit(tr, li, btn);
-    });
-    return btn;
+  // Estrae il numero iniziale da una stringa camera (es. "106." -> 106, "12A" -> 12)
+  function roomNumber(room) {
+    const m = String(room || '').match(/\d+/);
+    return m ? parseInt(m[0], 10) : Infinity;
   }
 
-  // Sostituisce il contenuto della riga con un singolo input che contiene il testo grezzo originale
-  function entraInEdit(tr, li, pencilBtn) {
+  // Ricostruisce la riga grezza testuale a partire dai campi strutturati,
+  // nel formato del tipo corrente, cosi' il textarea resta sempre sincronizzato.
+  function serializeRow(r, type) {
+    if (type === 'A') {
+      // formato: room status board dates [name] [pax P]
+      const parts = [r.room, r.status, r.board || 'FB', r.dates];
+      if (r.name) parts.push(r.name);
+      if (r.pax) parts.push(r.pax, 'P');
+      return parts.filter(x => x !== undefined && x !== '').join(' ');
+    } else {
+      // tipo B/C: usiamo sempre il formato B per la riscrittura, e' equivalente
+      const [d1, d2] = expandPeriod(r.period);
+      const parts = [d1, d2, r.room];
+      if (r.name) parts.push(r.name);
+      if (r.pax) parts.push(r.pax);
+      if (r.board) parts.push(r.board);
+      parts.push('P');
+      return parts.join(' ');
+    }
+  }
+
+  // DD.MM-DD.MM -> [DD/MM/YY, DD/MM/YY] usando l'anno corrente come fallback
+  function expandPeriod(period) {
+    const m = String(period || '').match(/^(\d{1,2})\.(\d{1,2})-(\d{1,2})\.(\d{1,2})$/);
+    if (!m) return ['', ''];
+    const yy = new Date().getFullYear().toString().slice(-2);
+    const f = (d, mo) => `${d.padStart(2,'0')}/${mo.padStart(2,'0')}/${yy}`;
+    return [f(m[1], m[2]), f(m[3], m[4])];
+  }
+
+  // Riscrive il textarea sulla base dello stato strutturato corrente (ordine = ordine visuale)
+  function syncTextarea() {
     const ta = document.getElementById('input');
-    const lines = ta.value.split('\n');
-    const original = lines[li] !== undefined ? lines[li] : '';
+    ta.value = rowsState.map(r => serializeRow(r, currentType)).join('\n');
+  }
 
-    tr.classList.add('editing-row');
-    const colCount = tr.children.length;
-    tr.innerHTML = '';
+  // Ordina rowsState per numero di camera crescente e ridisegna
+  function sortByRoomAndRender() {
+    rowsState.sort((a, b) => roomNumber(a.room) - roomNumber(b.room));
+    syncTextarea();
+    render();
+  }
 
+  // Aggiorna un campo di una riga nello stato; se il campo e' "room" riordina tutto
+  function updateField(idx, field, value) {
+    rowsState[idx][field] = value;
+    if (field === 'room') {
+      sortByRoomAndRender();
+    } else {
+      syncTextarea();
+      render();
+    }
+  }
+
+  function eliminaRiga(idx) {
+    rowsState.splice(idx, 1);
+    syncTextarea();
+    render();
+  }
+
+  // Crea una cella editabile: mostra il testo con una matita; al click la matita
+  // diventa un campo input con un check verde; Invio o click sul check confermano.
+  function editableCell(value, idx, field, extraClass) {
     const td = document.createElement('td');
-    td.colSpan = colCount - 1; // tutta la riga tranne la colonna check/edit
+    if (extraClass) td.className = extraClass;
+    td.classList.add('editable-cell');
+
+    const span = document.createElement('span');
+    span.className = 'cell-text';
+    span.textContent = value || '';
+
+    const pencil = document.createElement('button');
+    pencil.className = 'edit-btn edit-pencil';
+    pencil.title = 'Modifica';
+    pencil.innerHTML = PENCIL_SVG;
+
+    td.appendChild(span);
+    td.appendChild(pencil);
+
+    pencil.addEventListener('click', function() {
+      startCellEdit(td, value, idx, field);
+    });
+
+    return td;
+  }
+
+  function startCellEdit(td, value, idx, field) {
+    td.innerHTML = '';
+    td.classList.add('cell-editing');
+
     const input = document.createElement('input');
     input.type = 'text';
     input.className = 'edit-input';
-    input.value = original;
-    td.appendChild(input);
-    tr.appendChild(td);
+    input.value = value || '';
 
-    const checkTd = document.createElement('td');
-    const checkBtn = document.createElement('button');
-    checkBtn.className = 'edit-btn edit-check';
-    checkBtn.title = 'Confirma modifica';
-    checkBtn.innerHTML = CHECK_SVG;
-    checkBtn.addEventListener('click', function() {
-      confermaEdit(li, input.value);
-    });
-    checkTd.appendChild(checkBtn);
-    tr.appendChild(checkTd);
+    const check = document.createElement('button');
+    check.className = 'edit-btn edit-check';
+    check.title = 'Confirma';
+    check.innerHTML = CHECK_SVG;
 
+    function confirmEdit() {
+      updateField(idx, field, input.value.trim());
+    }
+
+    check.addEventListener('click', confirmEdit);
     input.addEventListener('keydown', function(ev) {
-      if (ev.key === 'Enter') {
-        ev.preventDefault();
-        confermaEdit(li, input.value);
-      }
+      if (ev.key === 'Enter') { ev.preventDefault(); confirmEdit(); }
     });
 
+    td.appendChild(input);
+    td.appendChild(check);
     input.focus();
     input.setSelectionRange(input.value.length, input.value.length);
   }
 
-  // Scrive il nuovo testo della riga "li" nel textarea grezzo e rigenera la tabella
-  function confermaEdit(li, newValue) {
-    const ta = document.getElementById('input');
-    const lines = ta.value.split('\n');
-    lines[li] = newValue;
-    ta.value = lines.join('\n');
-    genera();
-  }
-
-  function genera() {
-    const lines = document.getElementById('input').value.split('\n');
+  function render() {
     const head  = document.getElementById('head');
     const tbody = document.getElementById('rows');
     head.innerHTML = '';
     tbody.innerHTML = '';
 
-    const type = detectType(lines);
-    const parse = type === 'A' ? parseA : (type === 'B' ? parseB : parseC);
+    head.innerHTML = currentType === 'A'
+      ? '<tr><th class="c-date">Periodo</th><th class="c-room">Camera</th><th class="c-stat">Stato</th><th class="c-name">Nome</th><th class="c-pax">N.</th><th class="x-col"></th></tr>'
+      : '<tr><th class="b-date">Periodo</th><th class="b-room">Camera</th><th class="b-name">Nome</th><th class="b-board">Tratt.</th><th class="b-pax">N.</th><th class="x-col"></th></tr>';
 
-    head.innerHTML = type === 'A'
-      ? '<tr><th class="c-date">Periodo</th><th class="c-room">Camera</th><th class="c-stat">Stato</th><th class="c-name">Nome</th><th class="c-pax">N.</th><th class="edit-col"></th><th class="x-col"></th></tr>'
-      : '<tr><th class="b-date">Periodo</th><th class="b-room">Camera</th><th class="b-name">Nome</th><th class="b-board">Tratt.</th><th class="b-pax">N.</th><th class="edit-col"></th><th class="x-col"></th></tr>';
+    let withName = 0;
 
-    let n = 0, withName = 0, scartate = 0;
-
-    for (let li = 0; li < lines.length; li++) {
-      const line = lines[li];
-      if (!line.trim()) continue;
-      const r = parse(line);
-      if (!r) { scartate++; continue; }
-
-      n++;
+    rowsState.forEach((r, idx) => {
       const tr = document.createElement('tr');
-      tr.dataset.lineIndex = li;
-      if (type === 'A') {
+
+      if (currentType === 'A') {
         if (r.name) withName++;
-        const lead =
-          `<div class="lead">` +
-            `<span class="lead-stat">${esc(r.status)}</span>` +
-            (r.name ? `<span class="lead-name">${esc(r.name)}</span>` : '') +
-            `<span class="lead-fill"></span>` +
-            `<span class="lead-pax">${esc(r.pax)}</span>` +
-          `</div>`;
-        tr.innerHTML =
-          `<td class="c-date">${esc(r.dates)}</td>` +
-          `<td class="c-room">${esc(r.room)}</td>` +
-          `<td class="c-lead" colspan="3">${lead}</td>`;
+        tr.appendChild(editableCell(r.dates, idx, 'dates', 'c-date'));
+        tr.appendChild(editableCell(r.room, idx, 'room', 'c-room'));
+
+        const leadTd = document.createElement('td');
+        leadTd.className = 'c-lead';
+        leadTd.colSpan = 3;
+        const lead = document.createElement('div');
+        lead.className = 'lead';
+
+        const statSpan = editableInlineSpan(r.status, idx, 'status', 'lead-stat');
+        lead.appendChild(statSpan);
+
+        const nameSpan = editableInlineSpan(r.name, idx, 'name', 'lead-name');
+        lead.appendChild(nameSpan);
+
+        const fill = document.createElement('span');
+        fill.className = 'lead-fill';
+        lead.appendChild(fill);
+
+        const paxSpan = editableInlineSpan(r.pax, idx, 'pax', 'lead-pax');
+        lead.appendChild(paxSpan);
+
+        leadTd.appendChild(lead);
+        tr.appendChild(leadTd);
       } else {
-        tr.innerHTML =
-          `<td class="b-date">${esc(r.period)}</td>` +
-          `<td class="b-room">${esc(r.room)}</td>` +
-          `<td class="b-name">${esc(r.name)}</td>` +
-          `<td class="b-board">${esc(r.board)}</td>` +
-          `<td class="b-pax">${esc(r.pax)}</td>`;
+        tr.appendChild(editableCell(r.period, idx, 'period', 'b-date'));
+        tr.appendChild(editableCell(r.room, idx, 'room', 'b-room'));
+        tr.appendChild(editableCell(r.name, idx, 'name', 'b-name'));
+        tr.appendChild(editableCell(r.board, idx, 'board', 'b-board'));
+        tr.appendChild(editableCell(r.pax, idx, 'pax', 'b-pax'));
       }
 
-      // append the + button into the last cell
+      // append + button
       const lastTd = tr.lastElementChild;
       lastTd.appendChild(makeAddBtn(tr));
 
-      // Edit column: matita per modificare la riga grezza
-      const editTd = document.createElement('td');
-      editTd.className = 'edit-col';
-      editTd.appendChild(makeEditBtn(tr, li));
-      tr.appendChild(editTd);
-
-      // X column: removes this row's source line from the textarea and regenerates
+      // X column
       const xTd = document.createElement('td');
       xTd.className = 'x-col';
       const xBtn = document.createElement('button');
       xBtn.className = 'x-del-btn';
       xBtn.title = 'Elimina riga';
       xBtn.textContent = '✕';
-      xBtn.addEventListener('click', function() {
-        eliminaRigaInput(li);
-      });
+      xBtn.addEventListener('click', function() { eliminaRiga(idx); });
       xTd.appendChild(xBtn);
       tr.appendChild(xTd);
 
       tbody.appendChild(tr);
-    }
+    });
 
     const meta = document.getElementById('meta');
-    const scrap = scartate ? ` · ${scartate} righe ignorate` : '';
-    meta.textContent = type === 'A'
-      ? `Tipo A · ${n} camere · ${withName} con indicatore${scrap}`
-      : `Tipo ${type} · ${n} camere${scrap}`;
+    meta.textContent = currentType === 'A'
+      ? `Tipo A · ${rowsState.length} camere · ${withName} con indicatore`
+      : `Tipo ${currentType} · ${rowsState.length} camere`;
   }
 
-  // Rimuove la riga "li" dal testo grezzo nel textarea e ricostruisce la tabella
-  function eliminaRigaInput(li) {
-    const ta = document.getElementById('input');
-    const lines = ta.value.split('\n');
-    lines.splice(li, 1);
-    ta.value = lines.join('\n');
-    genera();
+  // Variante inline (span) della cella editabile per i sotto-campi della riga tipo A
+  function editableInlineSpan(value, idx, field, extraClass) {
+    const wrap = document.createElement('span');
+    wrap.className = 'inline-editable ' + (extraClass || '');
+
+    const text = document.createElement('span');
+    text.className = 'cell-text';
+    text.textContent = value || '';
+
+    const pencil = document.createElement('button');
+    pencil.className = 'edit-btn edit-pencil';
+    pencil.title = 'Modifica';
+    pencil.innerHTML = PENCIL_SVG;
+
+    wrap.appendChild(text);
+    wrap.appendChild(pencil);
+
+    pencil.addEventListener('click', function() {
+      startInlineEdit(wrap, value, idx, field);
+    });
+
+    return wrap;
   }
 
-  document.getElementById('input').addEventListener('input', genera);
-  genera();
+  function startInlineEdit(wrap, value, idx, field) {
+    wrap.innerHTML = '';
+    wrap.classList.add('cell-editing');
+
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'edit-input edit-input-inline';
+    input.value = value || '';
+
+    const check = document.createElement('button');
+    check.className = 'edit-btn edit-check';
+    check.title = 'Confirma';
+    check.innerHTML = CHECK_SVG;
+
+    function confirmEdit() {
+      updateField(idx, field, input.value.trim());
+    }
+
+    check.addEventListener('click', confirmEdit);
+    input.addEventListener('keydown', function(ev) {
+      if (ev.key === 'Enter') { ev.preventDefault(); confirmEdit(); }
+    });
+
+    wrap.appendChild(input);
+    wrap.appendChild(check);
+    input.focus();
+    input.setSelectionRange(input.value.length, input.value.length);
+  }
+
+  // Costruisce lo stato strutturato a partire dal testo grezzo (usato solo quando
+  // il textarea viene modificato manualmente dall'utente)
+  function rebuildStateFromTextarea() {
+    const lines = document.getElementById('input').value.split('\n');
+    currentType = detectType(lines);
+    const parse = currentType === 'A' ? parseA : (currentType === 'B' ? parseB : parseC);
+    const newState = [];
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      const r = parse(line);
+      if (!r) continue;
+      newState.push(r);
+    }
+    rowsState = newState;
+    render();
+  }
+
+  document.getElementById('input').addEventListener('input', rebuildStateFromTextarea);
+  rebuildStateFromTextarea();
 </script>
 
 <script>
