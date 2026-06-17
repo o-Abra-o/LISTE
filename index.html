@@ -335,6 +335,11 @@
   <div class="btnrow">
     <button onclick="stampa()">Stampa</button>
     <label class="toggle">
+      <input type="checkbox" id="splitLists" checked>
+      <span class="switch"></span>
+      Dividi arrivi / partenze / presenti
+    </label>
+    <label class="toggle">
       <input type="checkbox" id="autoResize">
       <span class="switch"></span>
       Resize automatico
@@ -442,13 +447,21 @@
     return { period, room, name, board, pax };
   }
 
-  // ---- Tipo D: lista con sezioni "Arrivi del giorno" / "Presenti del giorno",
-  //      righe in formato C, totali e note scartati ----
+  // ---- Tipo D: lista a sezioni "Arrivi/Partenze/Presenti del giorno".
+  //      Le righe possono essere in formato B (date all'inizio) o C (date in fondo):
+  //      scelgo il parser riga per riga. Totali, note e ricevute vengono scartati.
   const SEC_ARRIVI   = /arrivi del giorno/i;
   const SEC_PRESENTI = /presenti del giorno/i;
+  const SEC_PARTENZE = /partenze del giorno/i;
 
   function hasSections(lines) {
-    return lines.some(l => SEC_ARRIVI.test(l) || SEC_PRESENTI.test(l));
+    return lines.some(l => SEC_ARRIVI.test(l) || SEC_PRESENTI.test(l) || SEC_PARTENZE.test(l));
+  }
+
+  // sceglie parseB (date all'inizio) o parseC (date in fondo) in base alla riga
+  function parseRowAuto(line) {
+    const t = line.trim().split(/\s+/);
+    return (SLASHDATE.test(t[0]) && t[1] && SLASHDATE.test(t[1])) ? parseB(line) : parseC(line);
   }
 
   function parseSectioned(lines) {
@@ -458,9 +471,10 @@
       const l = line.trim();
       if (!l) continue;
       if (SEC_ARRIVI.test(l))   { sec = 'arrivi';   continue; }
+      if (SEC_PARTENZE.test(l)) { sec = 'partenze'; continue; }
       if (SEC_PRESENTI.test(l)) { sec = 'presenti'; continue; }
-      const r = parseC(l);
-      if (!r) continue;          // intestazioni colonne, totali, note: ignorati
+      const r = parseRowAuto(l);
+      if (!r) continue;          // intestazioni colonne, totali, note, ricevute: ignorati
       r.section = sec;
       out.push(r);
     }
@@ -470,6 +484,7 @@
   // Stato strutturato: un array di oggetti riga, ciascuno con i campi del tipo rilevato.
   let rowsState = [];
   let currentType = 'A';
+  let sectioned = true;   // toggle "Dividi arrivi/partenze/presenti", attivo di default
 
   function makeAddBtn(insertAfterRow) {
     const btn = document.createElement('button');
@@ -514,12 +529,28 @@
     return m ? parseInt(m[0], 10) : Infinity;
   }
 
-  // true se la data di partenza (fine periodo "DD.MM-DD.MM") coincide con oggi
-  function departsToday(r) {
-    const m = String(r.period || '').match(/-(\d{1,2})\.(\d{1,2})$/);
-    if (!m) return false;
+  // Periodo "DD.MM-DD.MM": tipo A lo tiene in .dates, gli altri in .period
+  function getPeriod(r) { return r.period || r.dates || ''; }
+
+  function isToday(dd, mm) {
     const now = new Date();
-    return parseInt(m[1], 10) === now.getDate() && parseInt(m[2], 10) === (now.getMonth() + 1);
+    return parseInt(dd, 10) === now.getDate() && parseInt(mm, 10) === (now.getMonth() + 1);
+  }
+  // true se la data di arrivo (inizio periodo) coincide con oggi
+  function arrivesToday(r) {
+    const m = getPeriod(r).match(/^(\d{1,2})\.(\d{1,2})-/);
+    return m ? isToday(m[1], m[2]) : false;
+  }
+  // true se la data di partenza (fine periodo) coincide con oggi
+  function departsToday(r) {
+    const m = getPeriod(r).match(/-(\d{1,2})\.(\d{1,2})$/);
+    return m ? isToday(m[1], m[2]) : false;
+  }
+  // arrivi (arriva oggi) -> partenze (parte oggi) -> presenti (resto)
+  function classify(r) {
+    if (arrivesToday(r)) return 'arrivi';
+    if (departsToday(r)) return 'partenze';
+    return 'presenti';
   }
 
   // Ricostruisce la riga grezza testuale a partire dai campi strutturati,
@@ -565,7 +596,7 @@
     const ta = document.getElementById('input');
     if (currentType === 'D') {
       const lines = [];
-      [['arrivi', 'Arrivi del giorno'], ['presenti', 'Presenti del giorno']].forEach(([sec, label]) => {
+      [['arrivi', 'Arrivi del giorno'], ['partenze', 'Partenze del giorno'], ['presenti', 'Presenti del giorno']].forEach(([sec, label]) => {
         const rows = rowsState.filter(r => (r.section || 'presenti') === sec);
         if (!rows.length) return;
         lines.push(label);
@@ -667,6 +698,7 @@
       : '<tr><th class="b-date">Periodo</th><th class="b-room">Camera</th><th class="b-name">Nome</th><th class="b-board">Tratt.</th><th class="b-pax">N.</th><th class="x-col"></th></tr>';
 
     const ncols = document.querySelectorAll('#head tr th').length || 6;
+    const byRoom = (a, b) => roomNumber(rowsState[a].room) - roomNumber(rowsState[b].room);
 
     function sectionHeading(label, first) {
       const tr = document.createElement('tr');
@@ -678,45 +710,38 @@
       return tr;
     }
 
-    if (currentType === 'D') {
-      // Le camere che partono oggi vengono spostate in "Partenze di oggi" (ordinate per camera),
-      // tolte da arrivi/presenti. La classificazione e' solo visuale: lo stato resta arrivi/presenti.
-      const partenze = [], arrivi = [], presenti = [];
+    const meta = document.getElementById('meta');
+
+    if (sectioned) {
+      // Classificazione per data (confronto con la data del computer): arriva oggi -> Arrivi,
+      // parte oggi -> Partenze, altrimenti -> Gia' presenti. Ogni sezione e' ordinata per camera.
+      const arrivi = [], partenze = [], presenti = [];
       rowsState.forEach((r, idx) => {
-        if (departsToday(r)) partenze.push(idx);
-        else if ((r.section || 'presenti') === 'arrivi') arrivi.push(idx);
-        else presenti.push(idx);
+        const c = classify(r);
+        (c === 'arrivi' ? arrivi : c === 'partenze' ? partenze : presenti).push(idx);
       });
-      partenze.sort((a, b) => roomNumber(rowsState[a].room) - roomNumber(rowsState[b].room));
+      [arrivi, partenze, presenti].forEach(g => g.sort(byRoom));
 
       const groups = [
         ['Arrivi di oggi', arrivi],
         ['Partenze di oggi', partenze],
         ["Gia' presenti", presenti],
       ];
-      let firstSection = true;
+      let first = true;
       groups.forEach(([label, indices]) => {
         if (!indices.length) return;
-        tbody.appendChild(sectionHeading(label, firstSection));
-        firstSection = false;
+        tbody.appendChild(sectionHeading(label, first));
+        first = false;
         indices.forEach(idx => tbody.appendChild(buildRow(rowsState[idx], idx)));
       });
-    } else {
-      rowsState.forEach((r, idx) => tbody.appendChild(buildRow(r, idx)));
+      meta.textContent = `Arrivi ${arrivi.length} · Partenze ${partenze.length} · Gia' presenti ${presenti.length}`;
+      return;
     }
 
-    const withName = currentType === 'A' ? rowsState.filter(r => r.name).length : 0;
-    const meta = document.getElementById('meta');
-    if (currentType === 'D') {
-      const part = rowsState.filter(departsToday).length;
-      const arr  = rowsState.filter(r => !departsToday(r) && (r.section || 'presenti') === 'arrivi').length;
-      const pre  = rowsState.length - part - arr;
-      meta.textContent = `Arrivi ${arr} · Partenze ${part} · Gia' presenti ${pre}`;
-    } else {
-      meta.textContent = currentType === 'A'
-        ? `Tipo A · ${rowsState.length} camere · ${withName} con indicatore`
-        : `Tipo ${currentType} · ${rowsState.length} camere`;
-    }
+    // Toggle disattivato: lista unica, tutte le camere ordinate per numero
+    const order = rowsState.map((_, i) => i).sort(byRoom);
+    order.forEach(idx => tbody.appendChild(buildRow(rowsState[idx], idx)));
+    meta.textContent = `${rowsState.length} camere`;
   }
 
   // Costruisce la <tr> editabile di una singola riga (tipo A oppure B/C/D)
@@ -913,6 +938,20 @@
     cb.addEventListener('change', function() {
       autoResize = cb.checked;
       try { localStorage.setItem('autoResize', autoResize ? '1' : '0'); } catch (e) {}
+    });
+  })();
+
+  (function initSplit() {
+    const cb = document.getElementById('splitLists');
+    try {
+      const v = localStorage.getItem('splitLists');
+      if (v !== null) sectioned = v === '1';   // default attivo se mai impostato
+    } catch (e) {}
+    cb.checked = sectioned;
+    cb.addEventListener('change', function() {
+      sectioned = cb.checked;
+      try { localStorage.setItem('splitLists', sectioned ? '1' : '0'); } catch (e) {}
+      render();
     });
   })();
 
