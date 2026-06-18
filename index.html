@@ -83,7 +83,8 @@
     color: var(--ink);
   }
   .plusone-text { font-weight: 600; }
-  .lock { font-size: 15px; line-height: 1; }
+  .lock { display: inline-flex; line-height: 1; }
+  .lock svg { width: 18px; height: 18px; display: block; }
   button {
     font: inherit;
     font-size: 14px;
@@ -371,7 +372,7 @@
       <input type="checkbox" id="plusOne">
       <span class="switch"></span>
       <span class="plusone-text">+1</span>
-      <span class="lock" id="lockIcon">🔓</span>
+      <span class="lock" id="lockIcon"></span>
     </label>
   </div>
   <p class="meta" id="meta"></p>
@@ -427,6 +428,7 @@
     if (boardIdx < 1) return null;
 
     const room   = t[0];
+    if (DISCARD_ROOM.test(room)) return null;
     const status = t.slice(1, boardIdx).join(' ');
     const board  = t[boardIdx].toUpperCase();
     const dates  = (t[boardIdx + 1] && RANGEDATE.test(t[boardIdx + 1])) ? t[boardIdx + 1] : (t[boardIdx + 1] || '');
@@ -450,6 +452,7 @@
     if (!SLASHDATE.test(t[0]) || !t[1] || !SLASHDATE.test(t[1])) return null;
     const period   = fmtRange(t[0], t[1]);
     const room     = t[2] || '';
+    if (DISCARD_ROOM.test(room)) return null;
     const boardIdx = t.findIndex(x => BOARD.test(x));
     const board    = boardIdx !== -1 ? t[boardIdx].toUpperCase() : '';
     let seg = t.slice(3, boardIdx !== -1 ? boardIdx : t.length);
@@ -460,6 +463,9 @@
     return { period, room, name, board, pax };
   }
 
+  // Camere da scartare: "P.1", "P2", "P.10" ecc. (posti auto/segnaposto, non camere reali)
+  const DISCARD_ROOM = /^\s*p\.?\d/i;
+
   // ---- Tipo C: 126. PAX NOME [IND] FB P 15/06/26 19/06/26 ----
   function parseC(line) {
     const t = line.trim().split(/\s+/);
@@ -467,6 +473,7 @@
     if (slash.length < 2) return null;
     const period   = fmtRange(slash[0], slash[1]);
     const room     = t[0];
+    if (DISCARD_ROOM.test(room)) return null;
     const boardIdx = t.findIndex(x => BOARD.test(x));
     const board    = boardIdx !== -1 ? t[boardIdx].toUpperCase() : '';
     let seg = t.slice(1, boardIdx !== -1 ? boardIdx : t.length);
@@ -1009,8 +1016,11 @@
       if (plusOne.checked) d.setDate(d.getDate() + 1);
       giorno.value = toInput(d);   // set programmatico: non scatena l'evento change
     }
+    const LOCK_CLOSED = '<svg viewBox="0 0 24 24" fill="none" stroke="#0ea5e9" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2.5"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>';
+    const LOCK_OPEN   = '<svg viewBox="0 0 24 24" fill="none" stroke="#0ea5e9" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2.5"></rect><path d="M7 11V7a5 5 0 0 1 9.9-1"></path></svg>';
+
     function updateLock() {
-      lock.textContent = plusOne.checked ? '🔒' : '🔓';
+      lock.innerHTML = plusOne.checked ? LOCK_CLOSED : LOCK_OPEN;
       lock.title = plusOne.checked ? 'Giorno successivo a quello del computer' : 'Giorno del computer';
     }
 
