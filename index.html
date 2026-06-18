@@ -64,7 +64,26 @@
     gap: 10px;
     margin: 12px 0 4px;
     flex-wrap: wrap;
+    align-items: center;
   }
+  .dayfield {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: #555;
+  }
+  .date-input {
+    font: inherit;
+    font-size: 13px;
+    padding: 6px 8px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--panel);
+    color: var(--ink);
+  }
+  .plusone-text { font-weight: 600; }
+  .lock { font-size: 15px; line-height: 1; }
   button {
     font: inherit;
     font-size: 14px;
@@ -344,6 +363,16 @@
       <span class="switch"></span>
       Resize automatico
     </label>
+    <span class="dayfield">
+      Giorno interessato
+      <input type="date" id="giorno" class="date-input">
+    </span>
+    <label class="toggle">
+      <input type="checkbox" id="plusOne">
+      <span class="switch"></span>
+      <span class="plusone-text">+1</span>
+      <span class="lock" id="lockIcon">🔓</span>
+    </label>
   </div>
   <p class="meta" id="meta"></p>
 </div>
@@ -532,9 +561,20 @@
   // Periodo "DD.MM-DD.MM": tipo A lo tiene in .dates, gli altri in .period
   function getPeriod(r) { return r.period || r.dates || ''; }
 
+  // Giorno di riferimento: quello selezionato in "Giorno interessato"; in mancanza, oggi.
+  function targetDayMonth() {
+    const el = document.getElementById('giorno');
+    if (el && el.value) {
+      const p = el.value.split('-');   // YYYY-MM-DD
+      return { d: parseInt(p[2], 10), m: parseInt(p[1], 10) };
+    }
+    const n = new Date();
+    return { d: n.getDate(), m: n.getMonth() + 1 };
+  }
+  // true se (dd, mm) coincidono col giorno interessato
   function isToday(dd, mm) {
-    const now = new Date();
-    return parseInt(dd, 10) === now.getDate() && parseInt(mm, 10) === (now.getMonth() + 1);
+    const t = targetDayMonth();
+    return parseInt(dd, 10) === t.d && parseInt(mm, 10) === t.m;
   }
   // true se la data di arrivo (inizio periodo) coincide con oggi
   function arrivesToday(r) {
@@ -951,6 +991,48 @@
     cb.addEventListener('change', function() {
       sectioned = cb.checked;
       try { localStorage.setItem('splitLists', sectioned ? '1' : '0'); } catch (e) {}
+      render();
+    });
+  })();
+
+  (function initDay() {
+    const giorno = document.getElementById('giorno');
+    const plusOne = document.getElementById('plusOne');
+    const lock = document.getElementById('lockIcon');
+
+    const pad = n => String(n).padStart(2, '0');
+    const toInput = date => date.getFullYear() + '-' + pad(date.getMonth() + 1) + '-' + pad(date.getDate());
+
+    // imposta la data a oggi (+1 giorno se richiesto), partendo SEMPRE dalla data del computer
+    function applyFromToggle() {
+      const d = new Date();
+      if (plusOne.checked) d.setDate(d.getDate() + 1);
+      giorno.value = toInput(d);   // set programmatico: non scatena l'evento change
+    }
+    function updateLock() {
+      lock.textContent = plusOne.checked ? '🔒' : '🔓';
+      lock.title = plusOne.checked ? 'Giorno successivo a quello del computer' : 'Giorno del computer';
+    }
+
+    // stato del +1 ricordato tra le sessioni; la data scelta a mano NON viene ricordata
+    try { plusOne.checked = localStorage.getItem('plusOne') === '1'; } catch (e) {}
+    applyFromToggle();   // all'avvio: oggi, oppure domani se +1 attivo
+    updateLock();
+
+    plusOne.addEventListener('change', function() {
+      try { localStorage.setItem('plusOne', plusOne.checked ? '1' : '0'); } catch (e) {}
+      applyFromToggle();
+      updateLock();
+      render();
+    });
+
+    // selezione manuale dal calendario: il +1 si disattiva
+    giorno.addEventListener('change', function() {
+      if (plusOne.checked) {
+        plusOne.checked = false;
+        try { localStorage.setItem('plusOne', '0'); } catch (e) {}
+        updateLock();
+      }
       render();
     });
   })();
