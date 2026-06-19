@@ -741,7 +741,7 @@
     tbody.innerHTML = '';
 
     head.innerHTML = currentType === 'A'
-      ? '<tr><th class="c-date">Periodo</th><th class="c-room">Camera</th><th class="c-stat">Stato</th><th class="c-name">Nome</th><th class="c-pax">N.</th><th class="x-col"></th></tr>'
+      ? '<tr><th class="c-room">Camera</th><th class="c-date">Periodo</th><th class="c-stat">Stato</th><th class="c-name">Nome</th><th class="c-pax">N.</th><th class="x-col"></th></tr>'
       : '<tr><th class="b-date">Periodo</th><th class="b-room">Camera</th><th class="b-name">Nome</th><th class="b-board">Tratt.</th><th class="b-pax">N.</th><th class="x-col"></th></tr>';
 
     const ncols = document.querySelectorAll('#head tr th').length || 6;
@@ -796,8 +796,8 @@
     const tr = document.createElement('tr');
 
     if (currentType === 'A') {
-      tr.appendChild(editableCell(r.dates, idx, 'dates', 'c-date'));
       tr.appendChild(editableCell(r.room, idx, 'room', 'c-room'));
+      tr.appendChild(editableCell(r.dates, idx, 'dates', 'c-date'));
 
       const leadTd = document.createElement('td');
       leadTd.className = 'c-lead';
