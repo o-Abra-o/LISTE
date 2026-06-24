@@ -386,7 +386,7 @@
 </div>
 
 <script>
-  const BOARD     = /^(FB|HB|BB)$/i;
+  const BOARD     = /^(FB|HB|BB|SP)$/i;
   const RANGEDATE = /^\d{1,2}\.\d{1,2}-\d{1,2}\.\d{1,2}$/;
   const SLASHDATE = /^\d{1,2}\/\d{1,2}\/\d{2,4}$/;
   // indicatore: M oppure un numero, eventualmente concatenati con "+"
@@ -438,6 +438,7 @@
     let pax = '';
     if (rest.length && /^\d+$/.test(rest[rest.length - 1])) pax = rest.pop();
     const nameRaw = rest.join(' ');
+    if (DISCARD_NAME.test(nameRaw)) return null;
 
     const tokens = nameRaw ? nameRaw.split(/\s+/) : [];
     const keep = tokens.length > 0 && INDICATOR.test(tokens[tokens.length - 1]);
@@ -460,11 +461,22 @@
     let pax = '';
     if (seg.length && /^\d+$/.test(seg[seg.length - 1])) pax = seg.pop(); // ultimo numero = persone
     const name = seg.join(' '); // eventuale indicatore resta nel nome
+    if (DISCARD_NAME.test(name)) return null;
     return { period, room, name, board, pax };
   }
 
   // Camere da scartare: "P.1", "P2", "P.10" ecc. (posti auto/segnaposto, non camere reali)
   const DISCARD_ROOM = /^\s*p\.?\d/i;
+
+  // Ospiti da scartare per nome: "BOOKING" (prenotazioni fittizie da non mostrare in lista)
+  const DISCARD_NAME = /\bbooking\b/i;
+
+  // Righe da ignorare per trattamento: SP o trattamento vuoto (es. arrivi fittizi tipo BOOKING).
+  // Le partenze vere restano: sono righe separate con trattamento FB/HB/BB.
+  function isIgnoredBoard(r) {
+    const b = (r.board || '').toUpperCase();
+    return b === '' || b === 'SP';
+  }
 
   // ---- Tipo C: 126. PAX NOME [IND] FB P 15/06/26 19/06/26 ----
   function parseC(line) {
@@ -480,6 +492,7 @@
     let pax = '';
     if (seg.length && /^\d+$/.test(seg[0])) pax = seg.shift(); // primo numero = persone
     const name = seg.join(' '); // eventuale indicatore resta nel nome
+    if (DISCARD_NAME.test(name)) return null;
     return { period, room, name, board, pax };
   }
 
@@ -511,6 +524,7 @@
       if (SEC_PRESENTI.test(l)) { sec = 'presenti'; continue; }
       const r = parseRowAuto(l);
       if (!r) continue;          // intestazioni colonne, totali, note, ricevute: ignorati
+      if (isIgnoredBoard(r)) continue;  // SP o trattamento vuoto: scartati
       r.section = sec;
       out.push(r);
     }
@@ -911,6 +925,7 @@
       if (!line.trim()) continue;
       const r = parse(line);
       if (!r) continue;
+      if (isIgnoredBoard(r)) continue;  // SP o trattamento vuoto: scartati
       newState.push(r);
     }
     rowsState = newState;
