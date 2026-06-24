@@ -444,7 +444,7 @@
     const keep = tokens.length > 0 && INDICATOR.test(tokens[tokens.length - 1]);
     const name = keep ? nameRaw : '';
 
-    return { dates, room, status, board, name, pax };
+    return { dates, room, status, board, name, pax, guest: nameRaw };
   }
 
   // ---- Tipo B: 15/06/26 19/06/26 126. NOME [IND] PAX FB P ----
@@ -462,7 +462,7 @@
     if (seg.length && /^\d+$/.test(seg[seg.length - 1])) pax = seg.pop(); // ultimo numero = persone
     const name = seg.join(' '); // eventuale indicatore resta nel nome
     if (DISCARD_NAME.test(name)) return null;
-    return { period, room, name, board, pax };
+    return { period, room, name, board, pax, guest: name };
   }
 
   // Camere da scartare: "P.1", "P2", "P.10" ecc. (posti auto/segnaposto, non camere reali)
@@ -470,6 +470,27 @@
 
   // Ospiti da scartare per nome: "BOOKING" (prenotazioni fittizie da non mostrare in lista)
   const DISCARD_NAME = /\bbooking\b/i;
+
+  // Deduplica: righe con STESSA camera e STESSO ospite vengono fuse in una sola
+  // (es. cambio camera esportato due volte). I turnover veri restano: ospiti diversi.
+  function normRoom(room) { return String(room || '').trim().replace(/\.+$/, '').toUpperCase(); }
+  function hasMoveNote(r) { return /\(\s*(da|a)\b/i.test(r.status || ''); }
+  function dedupeRows(rows) {
+    const idxByKey = new Map();
+    const out = [];
+    for (const r of rows) {
+      const key = normRoom(r.room) + '|' + String(r.guest || '').trim().toUpperCase();
+      if (!key.endsWith('|') && idxByKey.has(key)) {
+        // duplicato: tieni quello con l'annotazione di cambio camera, altrimenti il primo
+        const i = idxByKey.get(key);
+        if (hasMoveNote(r) && !hasMoveNote(out[i])) out[i] = r;
+      } else {
+        idxByKey.set(key, out.length);
+        out.push(r);
+      }
+    }
+    return out;
+  }
 
   // Righe da ignorare per trattamento: SP o trattamento vuoto (es. arrivi fittizi tipo BOOKING).
   // Le partenze vere restano: sono righe separate con trattamento FB/HB/BB.
@@ -493,7 +514,7 @@
     if (seg.length && /^\d+$/.test(seg[0])) pax = seg.shift(); // primo numero = persone
     const name = seg.join(' '); // eventuale indicatore resta nel nome
     if (DISCARD_NAME.test(name)) return null;
-    return { period, room, name, board, pax };
+    return { period, room, name, board, pax, guest: name };
   }
 
   // ---- Tipo D: lista a sezioni "Arrivi/Partenze/Presenti del giorno".
@@ -914,7 +935,7 @@
     const lines = document.getElementById('input').value.split('\n');
     if (hasSections(lines)) {
       currentType = 'D';
-      rowsState = parseSectioned(lines);
+      rowsState = dedupeRows(parseSectioned(lines));
       render();
       return;
     }
@@ -928,7 +949,7 @@
       if (isIgnoredBoard(r)) continue;  // SP o trattamento vuoto: scartati
       newState.push(r);
     }
-    rowsState = newState;
+    rowsState = dedupeRows(newState);
     render();
   }
 
