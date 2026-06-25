@@ -338,7 +338,7 @@
       border-radius: 0;
       max-width: none;
     }
-    table { font-size: var(--print-font, 9.5px); }
+    table { font-size: var(--print-font, 13px); }
     td, th { padding: 2.5px 4px; }
     thead { display: none; }
     .add-row-btn, .del-row-btn, .x-del-btn, .x-col, .edit-btn { display: none !important; }
@@ -959,7 +959,7 @@
   const MM = 96 / 25.4;                 // px per mm a 96 dpi
   const PRINT_W = 186 * MM;             // larghezza utile A4 (210 - margini 12+12)
   const PAGE_H  = 269 * MM * 0.94;      // altezza utile A4 (297 - margini 14+14), con margine di sicurezza
-  const F_MIN = 8, F_MAX = 15;          // F_MIN: leggibilita'; F_MAX: tetto per liste corte (colonne spaziate)
+  const F_MIN = 13, F_MAX = 15;         // F_MIN: leggibilita'; F_MAX: tetto per liste corte (colonne spaziate)
   let autoResize = false;
 
   const measureCss = document.createElement('style');
@@ -1007,7 +1007,8 @@
     if (autoResize) {
       document.documentElement.style.setProperty('--print-font', computeAutoFont() + 'px');
     } else {
-      document.documentElement.style.removeProperty('--print-font');
+      // senza resize automatico la stampa usa il font minimo come dimensione base
+      document.documentElement.style.setProperty('--print-font', F_MIN + 'px');
     }
   }
 
